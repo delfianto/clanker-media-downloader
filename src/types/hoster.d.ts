@@ -75,7 +75,9 @@ export type GalleryConfig = {
   // are loaded dynamically via JS (e.g. Bunkr's window.albumFiles), this bypasses
   // DOM-scraping strategies and returns the complete item list directly.
   // Runs in MAIN world so it has full access to page JS globals.
-  collectAllItems?: () => GalleryJobItem[];
+  // When root is provided, queries against it instead of document (used by
+  // fetchAdditionalItems for paginated pages).
+  collectAllItems?: (root?: Document | Element) => GalleryJobItem[];
   // Optional SW-side hooks (see type docs above).
   extractFromViewer?: ExtractFromViewer;
   resolveUrl?: ResolveUrl;

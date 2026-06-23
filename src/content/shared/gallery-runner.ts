@@ -3,9 +3,11 @@ import type { GalleryConfig, HosterModel } from "../../types/hoster";
 import type { GalleryJobItem, MDGalleryStartRequest } from "../../types/messages";
 import type { GalleryCtx } from "./gallery-ui";
 
+import { sanitizeFilename } from "../../background/sanitize";
+
 function buildSubfolder(albumName: string, config: MDConfig): string {
   if (!config.autoFolderPerAlbum) return config.downloadDirectory;
-  const safeName = albumName.replace(new RegExp('[/\\\\:*?"<>|]', "g"), "_").trim();
+  const safeName = sanitizeFilename(albumName);
   return config.downloadDirectory ? `${config.downloadDirectory}/${safeName}` : safeName;
 }
 
@@ -148,16 +150,20 @@ async function fetchAdditionalItems(
     try {
       const doc = parser.parseFromString(html, "text/html");
       let pageItems: GalleryJobItem[] = [];
-      switch (gc.imageSource.strategy) {
-        case "thumbnail-transform":
-          pageItems = collectThumbnailTransform(gc, doc);
-          break;
-        case "anchor-href":
-          pageItems = collectAnchorHref(gc, doc);
-          break;
-        case "resolve-viewer":
-          pageItems = collectResolveViewer(gc, doc, useFallbackName);
-          break;
+      if (gc.collectAllItems) {
+        pageItems = gc.collectAllItems(doc);
+      } else {
+        switch (gc.imageSource.strategy) {
+          case "thumbnail-transform":
+            pageItems = collectThumbnailTransform(gc, doc);
+            break;
+          case "anchor-href":
+            pageItems = collectAnchorHref(gc, doc);
+            break;
+          case "resolve-viewer":
+            pageItems = collectResolveViewer(gc, doc, useFallbackName);
+            break;
+        }
       }
       allItems.push(...pageItems);
     } catch (e) {

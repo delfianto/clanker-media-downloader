@@ -40,7 +40,7 @@ interface BunkrFile {
   [key: string]: unknown;
 }
 
-function collectBunkrItems(): GalleryJobItem[] {
+function collectBunkrItems(_root?: Document | Element): GalleryJobItem[] {
   const origin = location.origin;
   const extractor = 'var jsCDN\\s*=\\s*"([^"]+)"';
 
