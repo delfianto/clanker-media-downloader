@@ -592,7 +592,11 @@ input[type="number"].narrow {
   display: flex;
   flex-direction: column;
   gap: 12px;
-  margin-top: 14px;
+  margin-top: 0;
+}
+
+#dl-jobs .default-note {
+  margin-top: 0;
 }
 
 .job-card {
@@ -809,7 +813,7 @@ progress::-moz-progress-bar {
   justify-content: space-between;
   padding: 12px 0;
   border-bottom: 1px solid var(--border);
-  margin-bottom: 12px;
+  margin-bottom: 14px;
 }
 
 .log-count {
