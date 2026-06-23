@@ -81,17 +81,32 @@ describe("GirlsReleased Hoster Model", () => {
           if (attr === "href") return "/site/femjoy.com";
           return null;
         },
+        closest: () => null,
+      };
+
+      const mockModelAnchor = {
+        textContent: "  Ariel A  ",
+        getAttribute: (attr: string) => {
+          if (attr === "href") return "/site/femjoy.com/model/5208/Ariel A";
+          return null;
+        },
+        closest: () => null,
+      };
+
+      const mockH1 = {
+        textContent: "  Sway  ",
+        getAttribute: () => null,
       };
 
       const mockDoc = {
-        querySelector: (selector: string) => {
-          if (selector === 'a[href*="/site/"]') {
-            return mockSiteAnchor;
-          }
+        querySelectorAll: (selector: string) => {
           if (selector === "h1") {
-            return { textContent: "  Ariel A / Sway  " };
+            return [mockH1];
           }
-          return null;
+          if (selector === 'a[href*="/site/"]') {
+            return [mockSiteAnchor, mockModelAnchor];
+          }
+          return [];
         },
       };
 
@@ -100,12 +115,17 @@ describe("GirlsReleased Hoster Model", () => {
     });
 
     it("falls back to only the set title if site is not found", () => {
+      const mockH1 = {
+        textContent: "  Ariel A - Sway  ",
+        getAttribute: () => null,
+      };
+
       const mockDoc = {
-        querySelector: (selector: string) => {
+        querySelectorAll: (selector: string) => {
           if (selector === "h1") {
-            return { textContent: "  Ariel A / Sway  " };
+            return [mockH1];
           }
-          return null;
+          return [];
         },
       };
 

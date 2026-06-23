@@ -96,31 +96,54 @@ export const girlsreleasedModel: HosterModel = {
     resolveUrl: resolveGirlsreleasedUrl,
   },
   getGalleryName: (doc: Document) => {
-    const siteAnchor = doc.querySelector<HTMLAnchorElement>('a[href*="/site/"]');
+    // 1. Find the visible h1 (the set name)
+    const visibleH1 = Array.from(doc.querySelectorAll("h1")).find((el) => {
+      const style = el.getAttribute("style") || "";
+      const text = el.textContent?.trim() || "";
+      return !style.includes("display: none") && text !== "about 0";
+    });
+    const setName = visibleH1 ? visibleH1.textContent?.trim() || "" : doc.title?.trim() || "";
+
+    // 2. Find site links that are not in navigation/header
+    const siteLinks = Array.from(
+      doc.querySelectorAll<HTMLAnchorElement>('a[href*="/site/"]'),
+    ).filter((a) => !a.closest("nav") && !a.closest("header"));
+
+    const siteLink = siteLinks.find((a) => {
+      const href = a.getAttribute("href") || "";
+      return href.startsWith("/site/") && !href.includes("/model/");
+    });
+    const modelLink = siteLinks.find((a) => {
+      const href = a.getAttribute("href") || "";
+      return href.startsWith("/site/") && href.includes("/model/");
+    });
+
     let siteName = "";
-    if (siteAnchor) {
-      const text = siteAnchor.textContent?.trim();
-      const href = siteAnchor.getAttribute("href") || "";
+    if (siteLink) {
+      const text = siteLink.textContent?.trim() || "";
+      const href = siteLink.getAttribute("href") || "";
       const match = /\/site\/([^/?]+)/.exec(href);
-      const rawSite = match?.[1] || text || "";
+      const rawSite = match?.[1] || text;
       if (rawSite) {
         const nameWithoutTld = rawSite.replace(/\.[a-z]{2,6}$/i, "");
         siteName = nameWithoutTld.charAt(0).toUpperCase() + nameWithoutTld.slice(1);
       }
     }
 
-    let albumName = "";
-    const h1 = doc.querySelector("h1");
-    if (h1) {
-      albumName = h1.textContent?.trim() ?? "";
-    } else {
-      albumName = doc.title?.trim() ?? "";
+    let modelName = "";
+    if (modelLink) {
+      modelName = modelLink.textContent?.trim() || "";
     }
-    albumName = albumName.replace(/\s*\/\s*/g, " - ");
 
-    if (siteName && albumName) {
-      return `${siteName}/${albumName}`;
+    const cleanSetName = setName.replace(/\s*\/\s*/g, " - ");
+
+    if (siteName) {
+      if (modelName) {
+        return `${siteName}/${modelName} - ${cleanSetName}`;
+      } else {
+        return `${siteName}/${cleanSetName}`;
+      }
     }
-    return albumName || null;
+    return cleanSetName || null;
   },
 };
