@@ -1,7 +1,8 @@
 # clanker-media-downloader
 
 > A one-click image downloader for image hosting sites, built as a MV3 browser extension.  
-> Engineered with the structural integrity of a nuclear bunker to save JPEGs.
+> Engineered with the structural integrity of a nuclear bunker to save JPEGs.  
+> And MP4s. And MOVs. Entire galleries of them. At once.
 
 ---
 
@@ -9,18 +10,22 @@
 
 A browser extension. It puts a download button on images. That's it. That's the whole pitch.
 
-You visit a page on [ImageBam](https://imagebam.com), [ImgBox](https://imgbox.com), or [ImgBB](https://imgbb.com), and instead of right-click-saving-as like some kind of prehistoric cave-dweller, you get a button. You press the button. The image downloads. Revolutionary.
+You visit a page on [ImageBam](https://imagebam.com), [ImgBox](https://imgbox.com), [ImgBB](https://imgbb.com), or [Bunkr](https://bunkr.si), and instead of right-click-saving-as like some kind of prehistoric cave-dweller, you get a button. You press the button. The image downloads. Revolutionary.
+
+Oh, you want to download an entire gallery? 154 files? One click. The extension queues them, resolves each viewer page, signs CDN URLs, retries transient failures with exponential backoff, tracks actual completion via Chrome's download manager (not just "we clicked the button, good luck"), splits parallelism by media type so images fly through 5 at a time while 2GB videos trickle one at a time so the CDN doesn't have a stroke, sanitizes filenames for Windows, detects mojibake garbage filenames and replaces them with file IDs, and logs every step of it to a Logs tab you can copy to clipboard and paste into an issue that will never be read.
 
 Behind this trivial act of clicking a button lies:
 
 - A **Manifest V3 service worker** that proxies cross-origin fetch requests because Chrome in its infinite wisdom decided content scripts shouldn't be able to just download things normally
 - A **dual content-script world architecture** with an elaborate `postMessage` bridge relay system because MV3 extension worlds cannot talk to each other like adults
 - **TypeScript 7 RC** — yes, the release candidate, because apparently downloading JPEGs required the absolute bleeding edge of Microsoft's type system
-- A full **hoster model abstraction layer** with redirect rules, CDN URL rewriting, and per-site override schemas backed by `browser.storage.local` — for three websites
+- A full **hoster model abstraction layer** with redirect rules, CDN URL rewriting, per-site override schemas, per-hoster gallery adapters, and SW-side hooks for URL signing and viewer-page extraction — for four websites
 - `exactOptionalPropertyTypes: true`, `noUncheckedIndexedAccess: true`, `verbatimModuleSyntax: true` — a tsconfig so strict it would reject your grandmother's birthday card for insufficient type narrowing
-- A settings page. An **options page**. With CSS. For a download button.
+- A settings page. An **options page**. With CSS. With per-hoster toggles. For a download button.
+- **83 unit tests** covering filename sanitization, mojibake detection (with real Unicode codepoints from a live imagebam gallery), media-type classification, and transient error retry logic. Because of course there are.
+- **Download completion tracking** via `browser.downloads.onChanged` — because `browser.downloads.download()` resolves on *initiation*, not completion, and the previous version was silently dropping files the CDN rejected while counting them as "ok." That was a fun bug to find.
 
-Is this over-engineered? Yes. Does that bother the author? No. Were several serious architectural decisions made at 2am about the correct way to transfer `ArrayBuffer` as a transferable across a postMessage boundary to avoid memory doubling? Also yes.
+Is this over-engineered? Yes. Does that bother the author? No. Were several serious architectural decisions made at 2am about the correct way to transfer `ArrayBuffer` as a transferable across a postMessage boundary to avoid memory doubling? Also yes. Was a refactor done to extract all hoster-specific gallery logic out of shared code into per-hoster adapters because the shared runner had three `model.id ===` branches copy-pasting the same progress listener? Also also yes.
 
 ---
 
@@ -28,9 +33,10 @@ Is this over-engineered? Yes. Does that bother the author? No. Were several seri
 
 | Site | What it does |
 |------|-------------|
-| ImageBam | Injects download button, handles CDN → viewer redirect |
-| ImgBox | Same but with an 8-character path guard regex |
-| ImgBB | Same but slightly different DOM |
+| ImageBam | Single download button, CDN → viewer redirect, gallery batch download with UUID/mojibake filename fallback |
+| ImgBox | Same but with an 8-character path guard regex, thumbnail→full-res URL transform |
+| ImgBB | Same but slightly different DOM, anchor-href gallery strategy |
+| Bunkr | The whole beast: 21 mirror domains, `window.albumFiles` collection, viewer-page HTML extraction, CDN URL signing via `glb-apisign.cdn.cr`, "Server under maintenance" detection, `<source>`/`<video>` fallback for video pages, per-hoster CSS injection |
 
 If your favorite image hosting site isn't here: that's your problem, not mine.
 
@@ -71,6 +77,28 @@ Load `build/firefox/` via `about:debugging`.
 
 That's it. You're done. You now have a download button on images. Congratulations.
 
+### Gallery Downloads
+
+On any supported gallery/album page, you'll see a download button injected into the page UI. Click it. The extension:
+
+1. Collects all items (from DOM, or from `window.albumFiles` on Bunkr)
+2. Fetches additional paginated pages if they exist
+3. De-duplicates items
+4. Sends the batch to the service worker
+5. The SW resolves each item (fetch viewer page → extract CDN URL → sign if needed)
+6. Downloads run in two parallel queues — images at `maxParallelImg` (default 5), videos at `maxParallelVid` (default 1) — because CDNs throttle large parallel transfers and you end up with `SERVER_CONTENT_LENGTH_MISMATCH` errors on 2GB files
+7. Retries transient failures (`SERVER_FAILED`, `NETWORK_FAILED`, `CRASH`, `SERVER_CONTENT_LENGTH_MISMATCH`) up to 3 times with 1s/2s/4s exponential backoff
+8. Retries HTTP 502/503/504 on viewer page fetches and sign API calls
+9. Tracks actual completion via `browser.downloads.onChanged` — not just "we asked Chrome to download it"
+10. Sanitizes filenames for Windows (`\ / : * ? " < > |` and control chars → `_`)
+11. Logs everything to the Logs tab
+
+You can watch progress in the Downloads tab (History sub-tab), copy logs to clipboard for bug reports that will never be filed, and adjust parallelism settings in the Settings sub-tab.
+
+### ImageBam Filename Fallback
+
+ImageBam sometimes assigns UUIDs or absolute mojibake garbage (broken Unicode from encoding mismatches like `54­Øÿ╝­ØÖº­ØÖÜ­ØÖû 69.jpg`) as filenames. The "Use Fallback Name" toggle (on by default) detects these and replaces them with the ImageBam file ID from the URL, preserving the extension. So `54­Øÿ╝­ØÖº­ØÖÜ­ØÖû 69.jpg` becomes `ME2PNA7.jpg`. Normal filenames — ASCII, CJK, Japanese, Korean — pass through untouched.
+
 ---
 
 ## Support
@@ -105,6 +133,8 @@ If your feelings about LLM-assisted code are stronger than your desire to have a
 
 The following is a real description of what happens when you press the download button:
 
+### Single-image download
+
 ```
 CDN URL hits redirector.ts (ISOLATED world, document_start)
   → location.replace() to viewer page
@@ -116,7 +146,7 @@ Viewer page loads isolated.ts (ISOLATED world, document_idle)
 
 main.ts (MAIN world, document_idle)
   → receives config via __md_config__ listener
-  → dispatches to host adapter (imagebam/imgbox/imgbb)
+  → dispatches to host adapter (imagebam/imgbox/imgbb/bunkr)
   → adapter injects button into DOM
   → on click: posts MD_REQUEST via postMessage bridge
 
@@ -130,6 +160,7 @@ isolated.ts (relay)
 
 background/index.ts (Service Worker)
   → fetch() with credentials:omit, 30s timeout
+  → sanitizeFilename() before browser.downloads.download()
   → returns ArrayBuffer + contentType
 
 isolated.ts
@@ -138,6 +169,29 @@ isolated.ts
 downloader.ts (MAIN world)
   → Blob from ArrayBuffer → objectURL → <a> click
   → file saved to disk
+```
+
+### Gallery batch download
+
+```
+Gallery page loads → isolated.ts → __md_config__ → main.ts
+  → runGalleryAdapter(model, config, adapter.activateGallery)
+  → collects items (DOM strategy or model.collectAllItems)
+  → fetches pagination pages if present, de-duplicates
+  → adapter.injectGalleryButton — hoster-specific HTML, CSS, placement
+  → user clicks → triggerDownload()
+  → posts MD_GALLERY_START to ISOLATED → SW
+
+background/gallery.ts (Service Worker)
+  → partitions items: isMediaFile() → image queue + media queue
+  → runQueue(job, imageEntries, maxParallelImg)
+  → runQueue(job, mediaEntries, maxParallelVid)
+  → both run concurrently via Promise.all
+  → per item: fetchWithRetry(viewer page) → model.extractFromViewer()
+    → model.resolveUrl() (bunkr signing) → sanitizeFilename()
+    → browser.downloads.download() → onChanged listener confirms completion
+  → transient errors retried 3x with 1s/2s/4s backoff
+  → progress broadcast to options page + all tabs
 ```
 
 All of this happens so you can press a button and get a JPEG. Every single layer of this is load-bearing because MV3 is what happens when a browser vendor redesigns their extension API while clearly never having talked to an extension developer. The author did not choose this architecture for fun. The author chose this architecture because every simpler path was bricked.
@@ -149,22 +203,25 @@ All of this happens so you can press a button and get a JPEG. Every single layer
 | Thing | Why |
 |-------|-----|
 | TypeScript 7 RC | Felt dangerous. Lived. |
-| Bun | npm is slow and boring |
+| Bun | npm is slow and boring. Also its built-in test runner is zero-config. |
 | vite-plus (`vp`) | Unified VoidZero toolchain — lint, fmt, typecheck, build |
 | vite-plugin-web-extension | Extension builds without wanting to die |
 | webextension-polyfill | `browser.*` everywhere, `chrome.*` nowhere |
+| `bun test` | 83 tests, 0 dependencies, 9 milliseconds. Eat that, Jest. |
 
 ---
 
 ## Adding More Sites
 
-See `CLAUDE.md` for the full hoster model documentation. The short version:
+See `AGENTS.md` for the full hoster model documentation. The short version:
 
-1. Write a `HosterModel` in `src/hosts/{id}/model.ts`
-2. Write a DOM adapter in `src/hosts/{id}/adapter.ts`
+1. Write a `HosterModel` in `src/hosts/{id}/model.ts` — redirect rules, download config, gallery config, optional `extractFromViewer`/`resolveUrl` hooks for SW-side peculiarities
+2. Write a DOM adapter in `src/hosts/{id}/adapter.ts` — `activate()` for single-download, `activateGallery()` for gallery button injection (own HTML, CSS, placement)
 3. Add it to `src/hosts/index.ts`
 4. Wire up the manifest entries in `vite.config.ts`
-5. `bun run check`
+5. `bun run check && bun test && bun run build`
+
+The shared gallery runner has zero `model.id ===` checks. The SW has zero hoster-specific logic. All peculiarities live in the model and adapter. This is the way it should be. It was not always this way, and the git log bears the scars.
 
 The author may or may not ever do this. No commitments are being made here.
 
@@ -176,4 +233,4 @@ MIT. Take it. Fork it. Reskin it. Sell it on the Chrome Web Store under a differ
 
 ---
 
-*Personal tool. No commercial intent. No support. No warranty. Yes, an LLM wrote a substantial portion of this. No, the author does not care what you think about that.*
+*Personal tool. No commercial intent. No support. No warranty. Yes, an LLM wrote a substantial portion of this. No, the author does not care what you think about that. 83 tests pass. The images download. The videos download. The mojibake gets replaced. The CDN gets retried. Everything is fine.*
