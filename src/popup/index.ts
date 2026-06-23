@@ -21,9 +21,21 @@ function matchModel(url: string): HosterModel | undefined {
     return undefined;
   }
   return ALL_MODELS.find((model) => {
-    if (!model.viewerMatches.some((p) => patternToRegex(p).test(url))) return false;
-    const guard = model.downloadConfig.pathGuard;
-    return guard ? new RegExp(guard).test(pathname) : true;
+    const isViewer = model.viewerMatches.some((p) => patternToRegex(p).test(url));
+    const isGallery =
+      model.galleryConfig?.galleryMatches.some((p) => patternToRegex(p).test(url)) ?? false;
+
+    if (!isViewer && !isGallery) return false;
+
+    // If it matched as a viewer, check the pathGuard
+    if (isViewer && !isGallery) {
+      const guard = model.downloadConfig.pathGuard;
+      if (guard && !new RegExp(guard).test(pathname)) {
+        return false;
+      }
+    }
+
+    return true;
   });
 }
 
@@ -53,13 +65,13 @@ async function init(): Promise<void> {
     const model = tab?.url ? matchModel(tab.url) : undefined;
     if (!model) {
       dot.className = "dot";
-      text.textContent = "No supported hoster here";
+      text.textContent = "None";
     } else if (settings.enabled && settings.hosters[model.id].enabled) {
       dot.className = "dot on";
-      text.textContent = `${model.displayName} viewer ✓`;
+      text.textContent = model.displayName;
     } else {
       dot.className = "dot";
-      text.textContent = `${model.displayName} (disabled)`;
+      text.textContent = model.displayName;
     }
   } catch {
     dot.className = "dot";
