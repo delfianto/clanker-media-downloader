@@ -157,6 +157,7 @@ async function init(): Promise<void> {
     const keys = { ...DEFAULT_SETTINGS, subfolderPrefix: "" };
     const raw = (await browser.storage.local.get(keys)) as any;
     settings = raw as Settings;
+    settings.hosters = { ...DEFAULT_SETTINGS.hosters, ...settings.hosters };
     settings.downloadDirectory ??= raw.subfolderPrefix ?? DEFAULT_SETTINGS.downloadDirectory;
   } catch {
     settings = DEFAULT_SETTINGS;

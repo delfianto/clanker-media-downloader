@@ -13,6 +13,7 @@ import { effectiveRules } from "../settings/resolve";
 // www.imagebam.com); no CDN rule matches those URLs, so nothing happens there.
 async function run(): Promise<void> {
   const stored = (await browser.storage.local.get(DEFAULT_SETTINGS)) as Settings;
+  stored.hosters = { ...DEFAULT_SETTINGS.hosters, ...stored.hosters };
   if (!stored.enabled) return;
 
   const href = location.href;

@@ -43,6 +43,7 @@ async function init(): Promise<void> {
   let settings: Settings;
   try {
     settings = (await browser.storage.local.get(DEFAULT_SETTINGS)) as Settings;
+    settings.hosters = { ...DEFAULT_SETTINGS.hosters, ...settings.hosters };
   } catch {
     settings = DEFAULT_SETTINGS;
   }
