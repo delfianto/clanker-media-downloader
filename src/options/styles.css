@@ -829,6 +829,16 @@ progress::-moz-progress-bar {
   box-shadow: var(--shadow-sm);
 }
 
+.log-list:has(.default-note) {
+  border: none;
+  background: transparent;
+  box-shadow: none;
+}
+
+.log-list:has(.default-note) .default-note {
+  margin-top: 0;
+}
+
 .log-entry {
   display: flex;
   align-items: flex-start;
