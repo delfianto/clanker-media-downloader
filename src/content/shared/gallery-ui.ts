@@ -19,6 +19,22 @@ export function injectGalleryStyles(): void {
       margin: 8px 0 12px;
     }
     .md-gallery-note { font-size: 11px; color: #71717a; }
+    .md-ib-gallery-btn {
+      color: #3b82f6 !important;
+      display: inline-block;
+      margin-left: 10px;
+      font-size: 16px;
+      cursor: pointer;
+      vertical-align: middle;
+      transition: opacity 0.15s;
+    }
+    .md-ib-gallery-btn:hover {
+      opacity: 0.8;
+    }
+    .md-ib-gallery-btn.loading {
+      color: #3b82f6 !important;
+      pointer-events: none;
+    }
   `;
   (document.head ?? document.documentElement).appendChild(style);
 }

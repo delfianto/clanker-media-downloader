@@ -177,6 +177,13 @@ async function init(): Promise<void> {
 
   window.addEventListener("message", onMainMessage);
 
+  browser.runtime.onMessage.addListener((msg: unknown) => {
+    const m = msg as Record<string, unknown>;
+    if (m["type"] === "MD_JOB_PROGRESS") {
+      window.postMessage(m, "*");
+    }
+  });
+
   const config: MDConfig = {
     hosterId: model.id,
     pageType,

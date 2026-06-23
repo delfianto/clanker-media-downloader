@@ -51,6 +51,7 @@ function broadcastProgress(job: DownloadJob): void {
     items: job.items,
   };
   void browser.runtime.sendMessage(msg).catch(() => {});
+  void broadcastProgressToTabs(job);
 }
 
 // ── URL resolution ───────────────────────────────────────────────────────────
@@ -226,4 +227,22 @@ export async function resumeRunningJobs(): Promise<void> {
       void appendLog("warn", "Job marked error: SW restarted mid-run", job.jobId);
     }
   }
+}
+
+async function broadcastProgressToTabs(job: DownloadJob): Promise<void> {
+  const msg = {
+    type: "MD_JOB_PROGRESS",
+    jobId: job.jobId,
+    completedCount: job.completedCount,
+    totalCount: job.totalCount,
+    status: job.status,
+  };
+  try {
+    const tabs = await browser.tabs.query({});
+    for (const tab of tabs) {
+      if (tab.id) {
+        await browser.tabs.sendMessage(tab.id, msg).catch(() => {});
+      }
+    }
+  } catch {}
 }

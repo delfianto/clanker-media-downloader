@@ -1,7 +1,7 @@
 import type { MDConfig } from "../../types/global";
 import type { GalleryConfig, HosterModel } from "../../types/hoster";
 import type { GalleryJobItem, MDGalleryStartRequest } from "../../types/messages";
-import { createDownloadAllButton } from "./gallery-ui";
+import { createDownloadAllButton, injectGalleryStyles } from "./gallery-ui";
 
 function buildSubfolder(albumName: string, config: MDConfig): string {
   if (!config.autoFolderPerAlbum) return config.downloadDirectory;
@@ -115,6 +115,50 @@ export function runGalleryAdapter(model: HosterModel, config: MDConfig): void {
       : undefined;
 
   const subfolder = buildSubfolder(albumName, config);
+
+  const viewSwitches = document.querySelector(".view-switches");
+  if (model.id === "imagebam" && viewSwitches) {
+    injectGalleryStyles();
+    const dlBtn = document.createElement("a");
+    dlBtn.href = "javascript:void(0);";
+    dlBtn.className = "md-ib-gallery-btn";
+    dlBtn.title = "Download Gallery";
+    dlBtn.innerHTML = '<i class="fa fa-download"></i>';
+
+    let activeJobId = "";
+    dlBtn.addEventListener("click", () => {
+      if (activeJobId) return;
+      activeJobId = crypto.randomUUID();
+      dlBtn.innerHTML = '<i class="fa fa-spinner fa-spin"></i>';
+      dlBtn.classList.add("loading");
+
+      const req: MDGalleryStartRequest = {
+        type: "MD_GALLERY_START",
+        jobId: activeJobId,
+        hosterId: model.id,
+        subfolder,
+        items,
+        maxParallel: config.maxParallel,
+      };
+      window.postMessage(req, "*");
+    });
+
+    window.addEventListener("message", (event) => {
+      if (event.source !== window) return;
+      const data = event.data as Record<string, unknown>;
+      if (data["type"] === "MD_JOB_PROGRESS" && data["jobId"] === activeJobId) {
+        const status = data["status"];
+        if (status === "done" || status === "error") {
+          dlBtn.innerHTML = '<i class="fa fa-download"></i>';
+          dlBtn.classList.remove("loading");
+          activeJobId = "";
+        }
+      }
+    });
+
+    viewSwitches.appendChild(dlBtn);
+    return;
+  }
 
   const wrap = createDownloadAllButton(items.length, note, () => {
     const req: MDGalleryStartRequest = {
