@@ -49,6 +49,10 @@ export function injectGalleryStyles(): void {
       pointer-events: none;
       opacity: 1;
     }
+    @keyframes md-spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
   `;
   (document.head ?? document.documentElement).appendChild(style);
 }

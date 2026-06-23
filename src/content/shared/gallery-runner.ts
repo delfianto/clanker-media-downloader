@@ -163,17 +163,21 @@ export function runGalleryAdapter(model: HosterModel, config: MDConfig): void {
   const albumHeader = document.querySelector("h1");
   if (model.id === "imgbox" && albumHeader) {
     injectGalleryStyles();
+    const dlIconSvg =
+      '<svg viewBox="0 0 24 24" width="1.1em" height="1.1em" fill="currentColor" style="display: inline-block; vertical-align: middle;"><path d="M5 20h14v-2H5v2zM19 9h-4V3H9v6H5l7 7 7-7z"/></svg>';
+    const loadingIconSvg =
+      '<svg viewBox="0 0 24 24" width="1.1em" height="1.1em" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" style="display: inline-block; vertical-align: middle; animation: md-spin 1s linear infinite;"><circle cx="12" cy="12" r="10" stroke="currentColor" opacity="0.25"/><path d="M12 2a10 10 0 0 1 10 10" stroke="currentColor"/></svg>';
     const dlBtn = document.createElement("a");
     dlBtn.href = "javascript:void(0);";
     dlBtn.className = "md-imgbox-gallery-btn";
     dlBtn.title = "Download Gallery";
-    dlBtn.innerHTML = '<i class="fa fa-download"></i>';
+    dlBtn.innerHTML = dlIconSvg;
 
     let activeJobId = "";
     dlBtn.addEventListener("click", () => {
       if (activeJobId) return;
       activeJobId = crypto.randomUUID();
-      dlBtn.innerHTML = '<i class="fa fa-spinner fa-spin"></i>';
+      dlBtn.innerHTML = loadingIconSvg;
       dlBtn.classList.add("loading");
 
       const req: MDGalleryStartRequest = {
@@ -193,7 +197,7 @@ export function runGalleryAdapter(model: HosterModel, config: MDConfig): void {
       if (data["type"] === "MD_JOB_PROGRESS" && data["jobId"] === activeJobId) {
         const status = data["status"];
         if (status === "done" || status === "error") {
-          dlBtn.innerHTML = '<i class="fa fa-download"></i>';
+          dlBtn.innerHTML = dlIconSvg;
           dlBtn.classList.remove("loading");
           activeJobId = "";
         }
