@@ -429,10 +429,20 @@ function renderDownloadsSettings(): void {
     ]),
     el("div", { className: "settings-field" }, [
       el("div", {}, [
-        el("div", { className: "settings-label", textContent: "Auto-folder per album" }),
+        el("div", { className: "settings-label", textContent: "Download directory" }),
         el("div", {
           className: "settings-hint",
-          textContent: "Creates Downloads/{directory}/{albumId}/ per job",
+          textContent: "Relative path inside your browser's default downloads folder",
+        }),
+      ]),
+      dirInput,
+    ]),
+    el("div", { className: "settings-field" }, [
+      el("div", {}, [
+        el("div", { className: "settings-label", textContent: "Create subfolder by album name" }),
+        el("div", {
+          className: "settings-hint",
+          textContent: "Creates a subfolder for each album/gallery inside the download directory",
         }),
       ]),
       el("label", { className: "hoster-toggle" }, [
@@ -441,16 +451,6 @@ function renderDownloadsSettings(): void {
           el("span", { className: "slider" }),
         ]),
       ]),
-    ]),
-    el("div", { className: "settings-field" }, [
-      el("div", {}, [
-        el("div", { className: "settings-label", textContent: "Download directory" }),
-        el("div", {
-          className: "settings-hint",
-          textContent: "Relative path inside your browser's default downloads folder",
-        }),
-      ]),
-      dirInput,
     ]),
     el("div", { className: "settings-field" }, [
       el("div", {}, [
