@@ -179,7 +179,14 @@ async function resolveItem(item: GalleryJobItem, jobId: string, hosterId: string
   // If the model provides a URL resolver (e.g. bunkr's sign API), call it.
   if (gc?.resolveUrl) {
     void appendLog("debug", `Resolving URL: ${rawUrl}`, jobId);
-    return gc.resolveUrl(rawUrl, item.viewerUrl);
+    const resolved = await gc.resolveUrl(rawUrl, item.viewerUrl);
+    if (typeof resolved === "string") {
+      return resolved;
+    }
+    if (resolved.filename) {
+      item.filename = resolved.filename;
+    }
+    return resolved.url;
   }
   return rawUrl;
 }

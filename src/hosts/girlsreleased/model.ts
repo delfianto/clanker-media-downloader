@@ -40,7 +40,10 @@ function collectGirlsreleasedItems(root?: Document | Element): GalleryJobItem[] 
   return items;
 }
 
-async function resolveGirlsreleasedUrl(rawUrl: string, viewerUrl?: string): Promise<string> {
+async function resolveGirlsreleasedUrl(
+  rawUrl: string,
+  viewerUrl?: string,
+): Promise<string | { url: string; filename?: string }> {
   if (!viewerUrl) return rawUrl;
 
   if (viewerUrl.includes("imx.to/i/")) {
@@ -64,7 +67,11 @@ async function resolveGirlsreleasedUrl(rawUrl: string, viewerUrl?: string): Prom
     if (!imgMatch?.[1]) {
       throw new Error("Failed to parse direct image URL from imx.to POST response");
     }
-    return imgMatch[1];
+
+    const titleMatch = html.match(/<title>(?:IMX\.to\s*\/)?\s*([^<]+)<\/title>/i);
+    const filename = titleMatch?.[1]?.trim();
+
+    return filename ? { url: imgMatch[1], filename } : imgMatch[1];
   }
 
   return rawUrl;

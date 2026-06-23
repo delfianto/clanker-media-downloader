@@ -67,6 +67,35 @@ describe("GirlsReleased Hoster Model", () => {
       }
     });
 
+    it("returns direct URL and original filename from imx.to POST request bypass when title is present", async () => {
+      const originalFetch = global.fetch;
+      global.fetch = mock(async () => {
+        return {
+          ok: true,
+          text: async () => `
+            <html>
+              <head>
+                <title>IMX.to / 17944566_tyg186_002.jpg</title>
+              </head>
+              <body>
+                <img src="https://image.imx.to/u/i/2026/04/27/6r3hhr.jpg" />
+              </body>
+            </html>
+          `,
+        } as any;
+      });
+
+      try {
+        const directUrl = await resolveUrl!("continuebutton", "https://imx.to/i/6r3hhr");
+        expect(directUrl).toEqual({
+          url: "https://image.imx.to/u/i/2026/04/27/6r3hhr.jpg",
+          filename: "17944566_tyg186_002.jpg",
+        });
+      } finally {
+        global.fetch = originalFetch;
+      }
+    });
+
     it("returns rawUrl if no viewerUrl is provided", async () => {
       const directUrl = await resolveUrl!("someRawUrl");
       expect(directUrl).toBe("someRawUrl");
