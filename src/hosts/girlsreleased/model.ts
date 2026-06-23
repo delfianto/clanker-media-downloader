@@ -94,8 +94,31 @@ export const girlsreleasedModel: HosterModel = {
     resolveUrl: resolveGirlsreleasedUrl,
   },
   getGalleryName: (doc: Document) => {
+    const siteAnchor = doc.querySelector<HTMLAnchorElement>('a[href*="/site/"]');
+    let siteName = "";
+    if (siteAnchor) {
+      const text = siteAnchor.textContent?.trim();
+      const href = siteAnchor.getAttribute("href") || "";
+      const match = /\/site\/([^/?]+)/.exec(href);
+      const rawSite = match?.[1] || text || "";
+      if (rawSite) {
+        const nameWithoutTld = rawSite.replace(/\.[a-z]{2,6}$/i, "");
+        siteName = nameWithoutTld.charAt(0).toUpperCase() + nameWithoutTld.slice(1);
+      }
+    }
+
+    let albumName = "";
     const h1 = doc.querySelector("h1");
-    if (h1) return h1.textContent?.trim() ?? null;
-    return doc.title?.trim() ?? null;
+    if (h1) {
+      albumName = h1.textContent?.trim() ?? "";
+    } else {
+      albumName = doc.title?.trim() ?? "";
+    }
+    albumName = albumName.replace(/\s*\/\s*/g, " - ");
+
+    if (siteName && albumName) {
+      return `${siteName}/${albumName}`;
+    }
+    return albumName || null;
   },
 };

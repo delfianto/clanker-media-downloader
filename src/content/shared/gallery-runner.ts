@@ -7,7 +7,10 @@ import { sanitizeFilename } from "../../background/sanitize";
 
 function buildSubfolder(albumName: string, config: MDConfig): string {
   if (!config.autoFolderPerAlbum) return config.downloadDirectory;
-  const safeName = sanitizeFilename(albumName);
+  const safeName = albumName
+    .split("/")
+    .map((seg) => sanitizeFilename(seg))
+    .join("/");
   return config.downloadDirectory ? `${config.downloadDirectory}/${safeName}` : safeName;
 }
 

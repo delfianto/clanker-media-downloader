@@ -72,4 +72,45 @@ describe("GirlsReleased Hoster Model", () => {
       expect(directUrl).toBe("someRawUrl");
     });
   });
+
+  describe("getGalleryName", () => {
+    it("extracts and normalizes site name and set title", () => {
+      const mockSiteAnchor = {
+        textContent: "  femjoy.com  ",
+        getAttribute: (attr: string) => {
+          if (attr === "href") return "/site/femjoy.com";
+          return null;
+        },
+      };
+
+      const mockDoc = {
+        querySelector: (selector: string) => {
+          if (selector === 'a[href*="/site/"]') {
+            return mockSiteAnchor;
+          }
+          if (selector === "h1") {
+            return { textContent: "  Ariel A / Sway  " };
+          }
+          return null;
+        },
+      };
+
+      const name = girlsreleasedModel.getGalleryName!(mockDoc as unknown as Document);
+      expect(name).toBe("Femjoy/Ariel A - Sway");
+    });
+
+    it("falls back to only the set title if site is not found", () => {
+      const mockDoc = {
+        querySelector: (selector: string) => {
+          if (selector === "h1") {
+            return { textContent: "  Ariel A / Sway  " };
+          }
+          return null;
+        },
+      };
+
+      const name = girlsreleasedModel.getGalleryName!(mockDoc as unknown as Document);
+      expect(name).toBe("Ariel A - Sway");
+    });
+  });
 });
