@@ -1,5 +1,5 @@
 import browser from "webextension-polyfill";
-import type { HosterId, Settings } from "../types/global";
+import type { HosterId, HosterOverride, Settings } from "../types/global";
 import type { HosterModel, RedirectRule } from "../types/hoster";
 import type { DownloadJob, DownloadLog } from "../types/jobs";
 import type { MDJobProgressMessage, MDListJobsResponse, MDLogMessage } from "../types/messages";
@@ -302,6 +302,30 @@ function renderCssSection(model: HosterModel): HTMLElement {
   ]);
 }
 
+function renderFallbackNameSection(override: HosterOverride): HTMLElement {
+  const toggle = el("input", { type: "checkbox", checked: override.useFallbackName ?? false });
+  toggle.addEventListener("change", () => {
+    override.useFallbackName = toggle.checked;
+    persist();
+  });
+
+  return el("section", {}, [
+    el("div", { className: "section-head" }, [el("h3", { textContent: "Filename" })]),
+    el("div", { className: "settings-field" }, [
+      el("div", {}, [
+        el("div", { className: "settings-label", textContent: "Use Fallback Name" }),
+        el("div", {
+          className: "settings-hint",
+          textContent: "Use the ImageBam file ID when the filename is a UUID or garbled text",
+        }),
+      ]),
+      el("label", { className: "hoster-toggle" }, [
+        el("span", { className: "switch" }, [toggle, el("span", { className: "slider" })]),
+      ]),
+    ]),
+  ]);
+}
+
 function renderPanel(): void {
   const model = getModel(selected);
   const panel = $("panel");
@@ -324,6 +348,7 @@ function renderPanel(): void {
         el("span", { className: "switch" }, [toggle, el("span", { className: "slider" })]),
       ]),
     ]),
+    ...(model.galleryConfig?.isBizarreName ? [renderFallbackNameSection(override)] : []),
     renderRulesSection(model),
     renderCssSection(model),
   );

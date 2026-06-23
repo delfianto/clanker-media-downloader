@@ -1,5 +1,22 @@
 import type { HosterModel } from "../../types/hoster";
 
+// ImageBam sometimes assigns UUIDs or mojibake (broken Unicode from encoding
+// mismatches) as filenames. When the user enables "Use Fallback Name", this
+// test determines whether a gallery item's filename is bizarre enough to
+// warrant using the file ID from the URL instead.
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function isBizarreName(name: string): boolean {
+  const dot = name.lastIndexOf(".");
+  const base = dot >= 0 ? name.slice(0, dot) : name;
+  if (!base) return true;
+  if (UUID_RE.test(base)) return true;
+  // Mojibake: contains replacement chars, soft hyphens, or other garbled
+  // Unicode that signals an encoding mismatch (common on imagebam).
+  if (/[\u00C0-\u00FF\u00AD\uFFFD]/.test(base)) return true;
+  return false;
+}
+
 export const imagebamModel: HosterModel = {
   id: "imagebam",
   displayName: "ImageBam",
@@ -45,6 +62,7 @@ export const imagebamModel: HosterModel = {
       filenameSelector: ".title",
       extractor: '<img src="([^"]+)"[^>]*class="main-image',
     },
+    isBizarreName,
   },
   getGalleryName: (doc: Document) => {
     const galleryNameEl = doc.querySelector("#gallery-name");

@@ -7,7 +7,7 @@ import type { Settings } from "../types/global";
 export const DEFAULT_SETTINGS: Settings = {
   enabled: true,
   hosters: {
-    imagebam: { enabled: true, redirectRules: null, cssOverrides: "" },
+    imagebam: { enabled: true, redirectRules: null, cssOverrides: "", useFallbackName: true },
     imgbox: { enabled: true, redirectRules: null, cssOverrides: "" },
     imgbb: { enabled: true, redirectRules: null, cssOverrides: "" },
     bunkr: { enabled: true, redirectRules: null, cssOverrides: "" },

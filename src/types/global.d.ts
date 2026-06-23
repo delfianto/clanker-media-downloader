@@ -11,6 +11,7 @@ export type HosterOverride = {
   enabled: boolean; // always stored (default true)
   redirectRules: RedirectRule[] | null; // null = "use model defaults"
   cssOverrides: string; // empty string = none
+  useFallbackName?: boolean; // imagebam: use file ID when filename is UUID/mojibake
 };
 
 export type Settings = {
@@ -38,4 +39,5 @@ export type MDConfig = {
   maxParallelVid: number;
   downloadDirectory: string;
   autoFolderPerAlbum: boolean;
+  useFallbackName?: boolean;
 };

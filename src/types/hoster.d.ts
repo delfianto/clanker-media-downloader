@@ -79,6 +79,11 @@ export type GalleryConfig = {
   // Optional SW-side hooks (see type docs above).
   extractFromViewer?: ExtractFromViewer;
   resolveUrl?: ResolveUrl;
+  // Optional: test whether a gallery item's filename is "bizarre" (UUID,
+  // mojibake, etc.). When the user enables "Use Fallback Name" for this
+  // hoster, items whose filename matches this test use the file ID from the
+  // anchor href instead.
+  isBizarreName?: (name: string) => boolean;
 };
 
 export type HosterModel = {

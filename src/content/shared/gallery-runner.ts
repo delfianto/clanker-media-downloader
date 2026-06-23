@@ -62,6 +62,7 @@ function collectAnchorHref(
 function collectResolveViewer(
   gc: GalleryConfig,
   doc: Document | Element = document,
+  useFallbackName = false,
 ): GalleryJobItem[] {
   const src = gc.imageSource;
   if (src.strategy !== "resolve-viewer") return [];
@@ -70,12 +71,20 @@ function collectResolveViewer(
     .filter((a) => !!a.href)
     .map((a) => {
       const viewerUrl = a.href;
-      let filename = viewerUrl.split("/").at(-1) ?? "file";
+      const fileId = viewerUrl.split("/").at(-1) ?? "file";
+      let filename = fileId;
       if (src.filenameSelector) {
         const nameEl = a.querySelector(src.filenameSelector);
         if (nameEl?.textContent) {
           filename = nameEl.textContent.trim();
         }
+      }
+      // If the user enabled "Use Fallback Name" and the model says the name
+      // is bizarre (UUID, mojibake, etc.), use the file ID from the URL.
+      if (useFallbackName && gc.isBizarreName?.(filename)) {
+        const dot = filename.lastIndexOf(".");
+        const ext = dot >= 0 ? filename.slice(dot + 1) : "";
+        filename = ext ? `${fileId}.${ext}` : fileId;
       }
       return {
         kind: "resolve-viewer" as const,
@@ -114,6 +123,7 @@ function collectPageUrls(): string[] {
 async function fetchAdditionalItems(
   pageUrls: string[],
   gc: GalleryConfig,
+  useFallbackName = false,
 ): Promise<GalleryJobItem[]> {
   const allItems: GalleryJobItem[] = [];
   const parser = new DOMParser();
@@ -146,7 +156,7 @@ async function fetchAdditionalItems(
           pageItems = collectAnchorHref(gc, doc);
           break;
         case "resolve-viewer":
-          pageItems = collectResolveViewer(gc, doc);
+          pageItems = collectResolveViewer(gc, doc, useFallbackName);
           break;
       }
       allItems.push(...pageItems);
@@ -183,6 +193,7 @@ export function runGalleryAdapter(
   // Prefer the model's custom collector (e.g. Bunkr reads window.albumFiles for
   // the full list regardless of pagination/view mode). Fall back to strategy-
   // based DOM scraping for other hosters.
+  const useFallback = config.useFallbackName ?? false;
   let items: GalleryJobItem[];
   if (gc.collectAllItems) {
     items = gc.collectAllItems();
@@ -195,7 +206,7 @@ export function runGalleryAdapter(
         items = collectAnchorHref(gc);
         break;
       case "resolve-viewer":
-        items = collectResolveViewer(gc);
+        items = collectResolveViewer(gc, document, useFallback);
         break;
     }
   }
@@ -217,8 +228,8 @@ export function runGalleryAdapter(
     const otherPageUrls = collectPageUrls();
     let jobItems = items.slice();
     if (otherPageUrls.length > 0) {
-      btnElement.innerHTML = loadingIcon + "Fetching pages...";
-      const extra = await fetchAdditionalItems(otherPageUrls, gc);
+      btnElement.innerHTML = loadingIcon;
+      const extra = await fetchAdditionalItems(otherPageUrls, gc, useFallback);
       jobItems.push(...extra);
 
       // De-duplicate
@@ -231,7 +242,7 @@ export function runGalleryAdapter(
       });
     }
 
-    btnElement.innerHTML = loadingIcon + "Starting...";
+    btnElement.innerHTML = loadingIcon;
 
     const jobId = crypto.randomUUID();
     const req: MDGalleryStartRequest = {
