@@ -42,8 +42,9 @@ export function injectGalleryStyles(): void {
       pointer-events: none;
     }
     .md-bunkr-gallery-btn {
-      display: inline-flex; align-items: center; gap: 4px;
-      margin-left: 12px; padding: 4px 10px; font-size: 13px; font-weight: 600;
+      height: 2.25rem;
+      display: inline-flex; align-items: center; gap: 0.5rem;
+      padding: 0 0.9rem; font-size: 0.9rem; font-weight: 600;
       border: 1px solid rgba(167, 139, 250, 0.35); border-radius: 9999px;
       color: #c9b8ff !important; background: transparent; cursor: pointer;
       text-decoration: none !important; transition: background 0.15s, border-color 0.15s, color 0.15s;
