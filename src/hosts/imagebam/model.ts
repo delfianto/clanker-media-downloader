@@ -55,10 +55,9 @@ export const imagebamModel: HosterModel = {
       (a) => a.textContent?.includes("Back to gallery") || !!a.querySelector(".fa-reply"),
     );
     if (backLink) {
-      const href = backLink.getAttribute("href") || "";
-      const match = /\/view\/([A-Z0-9]+)/.exec(href);
-      if (match?.[1]) {
-        return match[1];
+      const href = backLink.getAttribute("href");
+      if (href) {
+        return new URL(href, doc.baseURI || location.href).href;
       }
     }
     return null;

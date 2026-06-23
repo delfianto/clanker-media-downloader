@@ -3,11 +3,10 @@ import type { GalleryConfig, HosterModel } from "../../types/hoster";
 import type { GalleryJobItem, MDGalleryStartRequest } from "../../types/messages";
 import { createDownloadAllButton } from "./gallery-ui";
 
-// ── Subfolder computation ────────────────────────────────────────────────────
-
-function buildSubfolder(albumId: string, config: MDConfig): string {
+function buildSubfolder(albumName: string, config: MDConfig): string {
   if (!config.autoFolderPerAlbum) return config.downloadDirectory;
-  return config.downloadDirectory ? `${config.downloadDirectory}/${albumId}` : albumId;
+  const safeName = albumName.replace(new RegExp('[/\\\\:*?"<>|]', "g"), "_").trim();
+  return config.downloadDirectory ? `${config.downloadDirectory}/${safeName}` : safeName;
 }
 
 // ── URL helpers ──────────────────────────────────────────────────────────────
@@ -115,7 +114,7 @@ export function runGalleryAdapter(model: HosterModel, config: MDConfig): void {
       ? "Current page only — pagination not yet supported"
       : undefined;
 
-  const subfolder = buildSubfolder(albumId, config);
+  const subfolder = buildSubfolder(albumName, config);
 
   const wrap = createDownloadAllButton(items.length, note, () => {
     const req: MDGalleryStartRequest = {
