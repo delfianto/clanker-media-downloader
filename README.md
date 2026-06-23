@@ -97,7 +97,15 @@ You can watch progress in the Downloads tab (History sub-tab), copy logs to clip
 
 ### ImageBam Filename Fallback
 
-ImageBam sometimes assigns UUIDs or absolute mojibake garbage (broken Unicode from encoding mismatches like `54­Øÿ╝­ØÖº­ØÖÜ­ØÖû 69.jpg`) as filenames. The "Use Fallback Name" toggle (on by default) detects these and replaces them with the ImageBam file ID from the URL, preserving the extension. So `54­Øÿ╝­ØÖº­ØÖÜ­ØÖû 69.jpg` becomes `ME2PNA7.jpg`. Normal filenames — ASCII, CJK, Japanese, Korean — pass through untouched.
+ImageBam sometimes assigns UUIDs or absolute mojibake garbage (broken Unicode from encoding mismatches like `54­Øÿ╝­ØÖº­ØÖÜ­ØÖû 69.jpg`) as filenames. The "Use Fallback Name" toggle (on by default) detects these and replaces them with the ImageBam file ID from the URL, preserving the extension. So `54­Øÿ╝­ØÖÚ­ØÖÜ­ØÖû 69.jpg` becomes `ME2PNA7.jpg`. Normal filenames — ASCII, CJK, Japanese, Korean — pass through untouched.
+
+### A Note On "Manual" Downloads
+
+On supported sites, the extension doesn't add a *separate* download button — it **hijacks the site's existing download button**. `event.preventDefault()` eats the native click, and the download is routed through the extension's service worker with your configured download directory (`Clanker/` by default).
+
+This means: on ImageBam, ImgBox, ImgBB, and Bunkr, **every** click on the site's own download button goes through the extension. There is no "manual" download on these sites anymore. If you disable a hoster in the options page, the native button is left alone and works normally. If the extension is enabled for that hoster, the button is ours.
+
+This is not a bug. This is the entire point. The extension exists because the native download buttons on these sites are terrible — they pop up ads, redirect through intermediary pages, or require multiple clicks. The extension replaces that with one click and a clean filename. The tradeoff is that your downloads go to `Clanker/` instead of your browser's default location. You can change the directory in Settings, or disable a hoster entirely if you want the native experience back.
 
 ---
 
