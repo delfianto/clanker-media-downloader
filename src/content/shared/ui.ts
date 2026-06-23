@@ -1,6 +1,5 @@
-// Shared download-feedback UI, replacing the three ad-hoc spinners from the
-// userscripts. One idempotent <style> injection; everything else is class
-// toggles on a small spinner + status element.
+// Shared download-feedback UI. One idempotent <style> injection; everything
+// else is class toggles or innerHTML swaps on the button element.
 
 export interface DownloadUI {
   showSpinner(message?: string): void;
@@ -16,114 +15,51 @@ function ensureStyles(): void {
   const style = document.createElement("style");
   style.id = STYLE_ID;
   style.textContent = `
-    .md-feedback { display: none; vertical-align: middle; margin-left: 10px; }
-    .md-feedback.md-active { display: inline-flex; align-items: center; gap: 6px; }
-    .md-spinner {
-      width: 16px; height: 16px; flex: none; display: inline-block;
-      border: 3px solid rgba(127, 127, 127, 0.35); border-top-color: #3498db;
-      border-radius: 50%; animation: md-spin 0.8s linear infinite;
-    }
-    .md-status { font-weight: 600; vertical-align: middle; transition: opacity 0.5s ease-out; }
-    .md-status.md-success { color: #2ecc71; }
-    .md-status.md-error { color: #e74c3c; }
-    .md-feedback.md-fade { opacity: 0; }
     .md-btn-busy { pointer-events: none; opacity: 0.6; }
+    .md-inline-spinner {
+      display: inline-block; width: 14px; height: 14px;
+      border: 2px solid rgba(127,127,127,0.35); border-top-color: currentColor;
+      border-radius: 50%; animation: md-spin 0.8s linear infinite;
+      vertical-align: middle;
+    }
+    .md-action-group { display: inline-flex; gap: 6px; align-items: center; }
+    .md-action-btn {
+      background: transparent; border: 1px solid rgba(127,127,127,0.4);
+      color: inherit; border-radius: 4px; padding: 4px 12px;
+      font-size: 12px; font-family: inherit; cursor: pointer;
+      min-width: 72px; text-align: center;
+      transition: background 0.15s, border-color 0.15s;
+    }
+    .md-action-btn:hover { background: rgba(127,127,127,0.1); border-color: rgba(127,127,127,0.7); }
+    .md-action-btn.md-btn-busy { pointer-events: none; opacity: 0.55; }
     @keyframes md-spin { to { transform: rotate(360deg); } }
   `;
   (document.head ?? document.documentElement).appendChild(style);
 }
 
-type Parts = { container: HTMLElement; spinner: HTMLElement; status: HTMLElement };
-
-function makeParts(): Parts {
-  const container = document.createElement("span");
-  container.className = "md-feedback";
-  const spinner = document.createElement("span");
-  spinner.className = "md-spinner";
-  const status = document.createElement("span");
-  status.className = "md-status";
-  container.append(spinner, status);
-  return { container, spinner, status };
-}
-
-function controller({ container, spinner, status }: Parts): DownloadUI {
-  let hideTimer: ReturnType<typeof setTimeout> | undefined;
-
-  function clearTimer(): void {
-    if (hideTimer !== undefined) {
-      clearTimeout(hideTimer);
-      hideTimer = undefined;
-    }
-  }
-
-  function show(text: string, kind: "" | "success" | "error", spinning: boolean): void {
-    clearTimer();
-    container.classList.add("md-active");
-    container.classList.remove("md-fade");
-    spinner.style.display = spinning ? "inline-block" : "none";
-    status.textContent = text;
-    status.classList.toggle("md-success", kind === "success");
-    status.classList.toggle("md-error", kind === "error");
-  }
-
-  function scheduleHide(delay: number): void {
-    clearTimer();
-    hideTimer = setTimeout(() => {
-      container.classList.add("md-fade");
-      hideTimer = setTimeout(() => container.classList.remove("md-active", "md-fade"), 500);
-    }, delay);
-  }
+// Swaps the button's inner HTML with a spinner while downloading, then
+// restores it. Works for both the imgbox icon anchor and the imagebam
+// injected buttons — no side text, no separate status element.
+export function createIconSwapUI(buttonEl: HTMLElement): DownloadUI {
+  ensureStyles();
+  const savedHTML = buttonEl.innerHTML;
 
   return {
-    showSpinner(message = "Downloading…"): void {
-      show(message, "", true);
-    },
-    showSuccess(message = "Downloaded!"): void {
-      show(message, "success", false);
-      scheduleHide(1500);
-    },
-    showError(message = "Download failed"): void {
-      show(message, "error", false);
-      scheduleHide(2500);
-    },
-    reset(): void {
-      clearTimer();
-      container.classList.remove("md-active", "md-fade");
-      status.textContent = "";
-    },
-  };
-}
-
-// imagebam: a spinner + status text inserted right after the filename element.
-export function createInlineUI(anchorEl: HTMLElement): DownloadUI {
-  ensureStyles();
-  const parts = makeParts();
-  anchorEl.after(parts.container);
-  return controller(parts);
-}
-
-// imgbox / imgbb: dim the button while busy and show status text beside it.
-export function createButtonUI(buttonEl: HTMLElement): DownloadUI {
-  ensureStyles();
-  const parts = makeParts();
-  buttonEl.after(parts.container);
-  const base = controller(parts);
-  return {
-    showSpinner(message): void {
+    showSpinner(): void {
       buttonEl.classList.add("md-btn-busy");
-      base.showSpinner(message);
+      buttonEl.innerHTML = '<span class="md-inline-spinner"></span>';
     },
-    showSuccess(message): void {
+    showSuccess(): void {
       buttonEl.classList.remove("md-btn-busy");
-      base.showSuccess(message);
+      buttonEl.innerHTML = savedHTML;
     },
-    showError(message): void {
+    showError(): void {
       buttonEl.classList.remove("md-btn-busy");
-      base.showError(message);
+      buttonEl.innerHTML = savedHTML;
     },
     reset(): void {
       buttonEl.classList.remove("md-btn-busy");
-      base.reset();
+      buttonEl.innerHTML = savedHTML;
     },
   };
 }

@@ -33,8 +33,8 @@ export async function crossOriginFetchBlob(
   const timer = setTimeout(() => controller.abort(), 30_000);
   try {
     const res = await fetch(url, {
-      credentials: "omit",
-      cache: "force-cache",
+      credentials: "include",
+      cache: "default",
       signal: controller.signal,
     });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);

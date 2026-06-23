@@ -1,5 +1,5 @@
 import type { HosterModel } from "../../types/hoster";
-import { createButtonUI } from "../../content/shared/ui";
+import { createIconSwapUI } from "../../content/shared/ui";
 import { resolveFilename } from "../../content/shared/filename";
 import { wireButton } from "../../content/shared/wire";
 
@@ -13,6 +13,5 @@ export function activate(model: HosterModel): void {
   const url = button.href;
   if (!url) return;
 
-  const ui = createButtonUI(button);
-  wireButton(button, url, () => resolveFilename(cfg.filenameStrategy), ui);
+  wireButton(button, url, () => resolveFilename(cfg.filenameStrategy), createIconSwapUI(button));
 }

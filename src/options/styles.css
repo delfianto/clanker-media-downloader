@@ -1,15 +1,16 @@
 :root {
-  --bg: #1a1a2e;
-  --surface: #16213e;
-  --surface2: #0f3460;
-  --accent: #e94560;
-  --accent2: #533483;
-  --text: #e0e0e0;
-  --text-dim: #888;
-  --border: #2a2a4a;
-  --ok: #5fbf6a;
-  --warn: #e0a64b;
-  --danger: #e94560;
+  --bg: #f4f4f5;
+  --surface: #ffffff;
+  --surface2: #f0f0f1;
+  --accent: #3b82f6;
+  --accent-dim: #dbeafe;
+  --text: #18181b;
+  --text-dim: #71717a;
+  --border: #e4e4e7;
+  --border-strong: #d1d1d6;
+  --ok: #16a34a;
+  --warn: #d97706;
+  --danger: #dc2626;
   --radius: 8px;
   --mono: ui-monospace, "SF Mono", "Cascadia Code", "JetBrains Mono", Menlo, Consolas, monospace;
 }
@@ -42,8 +43,8 @@ header {
 }
 
 .logo {
-  width: 36px;
-  height: 36px;
+  width: 32px;
+  height: 32px;
   flex-shrink: 0;
 }
 
@@ -52,24 +53,25 @@ header {
 }
 
 h1 {
-  font-size: 16px;
-  font-weight: 700;
-  letter-spacing: 0.3px;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.1px;
+  color: var(--text);
 }
 
 .version {
   font-size: 11px;
-  color: var(--accent);
-  font-weight: 600;
-  letter-spacing: 1px;
+  color: var(--text-dim);
+  font-weight: 500;
+  letter-spacing: 0.5px;
 }
 
 /* ── Toggle switch ──────────────────────────────────── */
 .switch {
   position: relative;
   display: inline-block;
-  width: 40px;
-  height: 22px;
+  width: 36px;
+  height: 20px;
   flex: none;
 }
 
@@ -83,8 +85,8 @@ h1 {
 .slider {
   position: absolute;
   inset: 0;
-  background: #333;
-  border-radius: 22px;
+  background: var(--border-strong);
+  border-radius: 20px;
   transition: background 0.2s;
   cursor: pointer;
 }
@@ -92,13 +94,14 @@ h1 {
 .slider::before {
   content: "";
   position: absolute;
-  width: 16px;
-  height: 16px;
+  width: 14px;
+  height: 14px;
   left: 3px;
   top: 3px;
   background: #fff;
   border-radius: 50%;
   transition: transform 0.2s;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
 }
 
 .switch input:checked + .slider {
@@ -106,7 +109,7 @@ h1 {
 }
 
 .switch input:checked + .slider::before {
-  transform: translateX(18px);
+  transform: translateX(16px);
 }
 
 .master-toggle,
@@ -115,7 +118,7 @@ h1 {
   align-items: center;
   gap: 8px;
   font-size: 12px;
-  font-weight: 600;
+  font-weight: 500;
   color: var(--text-dim);
   user-select: none;
 }
@@ -127,12 +130,12 @@ h1 {
 }
 
 .sidebar {
-  width: 200px;
+  width: 196px;
   flex-shrink: 0;
   padding: 16px 12px;
   border-right: 1px solid var(--border);
   position: sticky;
-  top: 65px;
+  top: 61px;
 }
 
 .sidebar h2,
@@ -145,49 +148,50 @@ h1 {
 }
 
 .sidebar h2 {
-  margin-bottom: 10px;
-  padding-left: 10px;
+  margin-bottom: 8px;
+  padding-left: 8px;
 }
 
 #hoster-list {
   list-style: none;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 2px;
 }
 
 .hoster-item {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 9px 10px;
-  border-radius: var(--radius);
+  padding: 8px 10px;
+  border-radius: 6px;
   border: 1px solid transparent;
   cursor: pointer;
   transition:
-    background 0.15s,
-    border-color 0.15s;
+    background 0.12s,
+    border-color 0.12s;
 }
 
 .hoster-item:hover {
-  background: var(--surface);
+  background: var(--surface2);
 }
 
 .hoster-item.active {
-  background: var(--surface);
-  border-color: var(--accent2);
+  background: var(--accent-dim);
+  border-color: #bfdbfe;
 }
 
 .hoster-item .name {
   flex: 1;
-  font-weight: 600;
+  font-weight: 500;
+  font-size: 13px;
 }
 
 .dot {
-  width: 8px;
-  height: 8px;
+  width: 7px;
+  height: 7px;
   border-radius: 50%;
-  background: var(--text-dim);
+  background: var(--border-strong);
   flex-shrink: 0;
 }
 
@@ -201,7 +205,7 @@ h1 {
   padding: 20px 24px;
   display: flex;
   flex-direction: column;
-  gap: 22px;
+  gap: 20px;
   max-width: 820px;
 }
 
@@ -214,8 +218,8 @@ h1 {
 }
 
 .panel-head h2 {
-  font-size: 20px;
-  font-weight: 700;
+  font-size: 18px;
+  font-weight: 600;
 }
 
 .section-head {
@@ -237,7 +241,7 @@ h1 {
 .rules {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
 }
 
 .rule {
@@ -258,7 +262,7 @@ h1 {
 
 .rule-desc {
   flex: 1;
-  font-weight: 600;
+  font-weight: 500;
 }
 
 .field {
@@ -295,6 +299,7 @@ textarea.mono {
 input[type="text"]:focus,
 textarea:focus {
   border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.12);
 }
 
 input.invalid {
@@ -318,9 +323,9 @@ input.invalid {
 }
 
 input[type="checkbox"] {
-  width: 16px;
-  height: 16px;
-  accent-color: var(--ok);
+  width: 15px;
+  height: 15px;
+  accent-color: var(--accent);
   cursor: pointer;
   flex-shrink: 0;
 }
@@ -337,41 +342,41 @@ button {
   border: 1px solid var(--border);
   color: var(--text);
   border-radius: 6px;
-  padding: 6px 12px;
+  padding: 5px 11px;
   font-size: 12px;
-  font-weight: 600;
+  font-weight: 500;
   transition:
-    background 0.15s,
-    border-color 0.15s;
+    background 0.12s,
+    border-color 0.12s;
 }
 
 .reset-btn:hover,
 .add-btn:hover {
-  border-color: var(--accent2);
   background: var(--surface2);
+  border-color: var(--border-strong);
 }
 
 .add-btn {
   align-self: flex-start;
-  margin-top: 10px;
+  margin-top: 8px;
 }
 
 .del-btn {
   background: transparent;
   border: none;
   color: var(--text-dim);
-  font-size: 16px;
+  font-size: 15px;
   line-height: 1;
   padding: 2px 6px;
   border-radius: 4px;
   transition:
-    color 0.15s,
-    background 0.15s;
+    color 0.12s,
+    background 0.12s;
 }
 
 .del-btn:hover {
-  color: #fff;
-  background: var(--danger);
+  color: var(--danger);
+  background: #fee2e2;
 }
 
 .css-editor {
@@ -384,18 +389,17 @@ button {
   position: fixed;
   bottom: 20px;
   right: 20px;
-  background: var(--surface2);
-  border: 1px solid var(--accent2);
-  color: var(--text);
-  padding: 10px 16px;
+  background: var(--text);
+  color: #fff;
+  padding: 9px 16px;
   border-radius: var(--radius);
   font-size: 13px;
-  font-weight: 600;
+  font-weight: 500;
   opacity: 0;
-  transform: translateY(8px);
+  transform: translateY(6px);
   transition:
-    opacity 0.2s,
-    transform 0.2s;
+    opacity 0.18s,
+    transform 0.18s;
   pointer-events: none;
 }
 
@@ -405,8 +409,7 @@ button {
 }
 
 .toast.error {
-  border-color: var(--danger);
-  color: #ffd7dd;
+  background: var(--danger);
 }
 
 /* ── Responsive ─────────────────────────────────────── */
