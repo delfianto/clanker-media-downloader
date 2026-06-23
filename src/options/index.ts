@@ -355,7 +355,7 @@ function renderJobCard(job: DownloadJob): HTMLElement {
   progress.setAttribute("max", String(job.totalCount));
 
   const isExpanded = expandedJobIds.has(job.jobId);
-  const itemsContainer = el("div", { className: "job-items", hidden: !isExpanded });
+  const itemsContainer = el("div", { className: "job-items" });
   if (job.items && job.items.length > 0) {
     for (const item of job.items) {
       const statusIcon =
@@ -410,15 +410,13 @@ function renderJobCard(job: DownloadJob): HTMLElement {
     if (target.closest(".job-items")) return;
 
     event.stopPropagation();
-    const isHidden = itemsContainer.hasAttribute("hidden");
-    if (isHidden) {
-      itemsContainer.removeAttribute("hidden");
-      card.classList.add("expanded");
-      expandedJobIds.add(job.jobId);
-    } else {
-      itemsContainer.setAttribute("hidden", "");
+    const isExpanded = card.classList.contains("expanded");
+    if (isExpanded) {
       card.classList.remove("expanded");
       expandedJobIds.delete(job.jobId);
+    } else {
+      card.classList.add("expanded");
+      expandedJobIds.add(job.jobId);
     }
   });
 
