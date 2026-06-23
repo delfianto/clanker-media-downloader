@@ -192,81 +192,102 @@ export function runGalleryAdapter(
   const gc = model.galleryConfig;
   if (!gc) return;
 
-  const albumIdMatch = new RegExp(gc.albumIdFromPath).exec(location.pathname);
-  const albumId = albumIdMatch?.[1] ?? location.pathname.split("/").at(-1) ?? "album";
+  function run() {
+    const albumIdMatch = new RegExp(gc!.albumIdFromPath).exec(location.pathname);
+    const albumId = albumIdMatch?.[1] ?? location.pathname.split("/").at(-1) ?? "album";
 
-  const albumName = model.getGalleryName
-    ? (model.getGalleryName(document) ?? albumId)
-    : (document.querySelector(gc.albumNameSelector)?.textContent?.trim() ?? albumId);
+    const albumName = model.getGalleryName
+      ? (model.getGalleryName(document) ?? albumId)
+      : (document.querySelector(gc!.albumNameSelector)?.textContent?.trim() ?? albumId);
 
-  // Prefer the model's custom collector (e.g. Bunkr reads window.albumFiles for
-  // the full list regardless of pagination/view mode). Fall back to strategy-
-  // based DOM scraping for other hosters.
-  const useFallback = config.useFallbackName ?? false;
-  let items: GalleryJobItem[];
-  if (gc.collectAllItems) {
-    items = gc.collectAllItems();
-  } else {
-    switch (gc.imageSource.strategy) {
-      case "thumbnail-transform":
-        items = collectThumbnailTransform(gc);
-        break;
-      case "anchor-href":
-        items = collectAnchorHref(gc);
-        break;
-      case "resolve-viewer":
-        items = collectResolveViewer(gc, document, useFallback);
-        break;
+    // Prefer the model's custom collector (e.g. Bunkr reads window.albumFiles for
+    // the full list regardless of pagination/view mode). Fall back to strategy-
+    // based DOM scraping for other hosters.
+    const useFallback = config.useFallbackName ?? false;
+    let items: GalleryJobItem[];
+    if (gc!.collectAllItems) {
+      items = gc!.collectAllItems();
+    } else {
+      switch (gc!.imageSource.strategy) {
+        case "thumbnail-transform":
+          items = collectThumbnailTransform(gc!);
+          break;
+        case "anchor-href":
+          items = collectAnchorHref(gc!);
+          break;
+        case "resolve-viewer":
+          items = collectResolveViewer(gc!, document, useFallback);
+          break;
+      }
     }
-  }
 
-  if (items.length === 0) return;
+    if (items.length === 0) return;
 
-  const subfolder = buildSubfolder(albumName, config);
+    const subfolder = buildSubfolder(albumName, config);
 
-  // Shared triggerDownload — handles pagination + de-duplication, then posts
-  // the MDGalleryStartRequest to the ISOLATED world relay. Each adapter's
-  // button click handler calls this.
-  async function triggerDownload(
-    btnElement: HTMLElement,
-    loadingIcon: string,
-    _doneIcon: string,
-  ): Promise<string> {
-    btnElement.classList.add("loading");
+    // Shared triggerDownload — handles pagination + de-duplication, then posts
+    // the MDGalleryStartRequest to the ISOLATED world relay. Each adapter's
+    // button click handler calls this.
+    async function triggerDownload(
+      btnElement: HTMLElement,
+      loadingIcon: string,
+      _doneIcon: string,
+    ): Promise<string> {
+      btnElement.classList.add("loading");
 
-    const otherPageUrls = collectPageUrls();
-    let jobItems = items.slice();
-    if (otherPageUrls.length > 0) {
+      const otherPageUrls = collectPageUrls();
+      let jobItems = items.slice();
+      if (otherPageUrls.length > 0) {
+        btnElement.innerHTML = loadingIcon;
+        const extra = await fetchAdditionalItems(otherPageUrls, gc!, useFallback);
+        jobItems.push(...extra);
+
+        // De-duplicate
+        const seen = new Set<string>();
+        jobItems = jobItems.filter((item) => {
+          const key = item.kind === "resolve-viewer" ? item.viewerUrl : item.imageUrl;
+          if (seen.has(key)) return false;
+          seen.add(key);
+          return true;
+        });
+      }
+
       btnElement.innerHTML = loadingIcon;
-      const extra = await fetchAdditionalItems(otherPageUrls, gc, useFallback);
-      jobItems.push(...extra);
 
-      // De-duplicate
-      const seen = new Set<string>();
-      jobItems = jobItems.filter((item) => {
-        const key = item.kind === "resolve-viewer" ? item.viewerUrl : item.imageUrl;
-        if (seen.has(key)) return false;
-        seen.add(key);
-        return true;
-      });
+      const jobId = crypto.randomUUID();
+      const req: MDGalleryStartRequest = {
+        type: "MD_GALLERY_START",
+        jobId,
+        hosterId: model.id,
+        subfolder,
+        items: jobItems,
+        maxParallelImg: config.maxParallelImg,
+        maxParallelVid: config.maxParallelVid,
+      };
+      window.postMessage(req, "*");
+      return jobId;
     }
 
-    btnElement.innerHTML = loadingIcon;
-
-    const jobId = crypto.randomUUID();
-    const req: MDGalleryStartRequest = {
-      type: "MD_GALLERY_START",
-      jobId,
-      hosterId: model.id,
-      subfolder,
-      items: jobItems,
-      maxParallelImg: config.maxParallelImg,
-      maxParallelVid: config.maxParallelVid,
-    };
-    window.postMessage(req, "*");
-    return jobId;
+    const ctx: GalleryCtx = { items, subfolder, albumName, triggerDownload };
+    activateGallery(model, ctx);
   }
 
-  const ctx: GalleryCtx = { items, subfolder, albumName, triggerDownload };
-  activateGallery(model, ctx);
+  if (gc.waitForSelector && !document.querySelector(gc.waitForSelector)) {
+    const selector = gc.waitForSelector;
+    let elapsed = 0;
+    const interval = setInterval(() => {
+      if (document.querySelector(selector)) {
+        clearInterval(interval);
+        run();
+      } else {
+        elapsed += 250;
+        if (elapsed >= 10000) {
+          clearInterval(interval);
+          console.warn(`[md] Timed out waiting for selector: ${selector}`);
+        }
+      }
+    }, 250);
+  } else {
+    run();
+  }
 }

@@ -94,6 +94,7 @@ export type GalleryConfig = {
   // anchor href instead.
   isBizarreName?: (name: string) => boolean;
   pathGuard?: string; // runtime regex on location.pathname before activating (jpg6 / user pages)
+  waitForSelector?: string; // wait for this selector to exist in DOM before running gallery adapter
 };
 
 export type HosterModel = {
