@@ -3,7 +3,7 @@
 // HosterId is defined here (the primitive) and re-exported from global.d.ts so
 // settings code can import it from either place.
 
-export type HosterId = "imagebam" | "imgbox" | "imgbb";
+export type HosterId = "imagebam" | "imgbox" | "imgbb" | "bunkr";
 
 export type RedirectRule = {
   id: string; // stable slug for user-override keying, e.g. "imagebam-new"

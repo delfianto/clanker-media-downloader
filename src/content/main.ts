@@ -4,11 +4,13 @@ import { getModel } from "../hosts/index";
 import { activate as activateImagebam } from "../hosts/imagebam/adapter";
 import { activate as activateImgbox } from "../hosts/imgbox/adapter";
 import { activate as activateImgbb } from "../hosts/imgbb/adapter";
+import { activate as activateBunkr } from "../hosts/bunkr/adapter";
 
 const ADAPTERS: Record<HosterId, (model: HosterModel) => void> = {
   imagebam: activateImagebam,
   imgbox: activateImgbox,
   imgbb: activateImgbb,
+  bunkr: activateBunkr,
 };
 
 // MAIN world, document_idle. Registered synchronously at load — isolated.ts

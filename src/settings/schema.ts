@@ -10,5 +10,6 @@ export const DEFAULT_SETTINGS: Settings = {
     imagebam: { enabled: true, redirectRules: null, cssOverrides: "" },
     imgbox: { enabled: true, redirectRules: null, cssOverrides: "" },
     imgbb: { enabled: true, redirectRules: null, cssOverrides: "" },
+    bunkr: { enabled: true, redirectRules: null, cssOverrides: "" },
   },
 };

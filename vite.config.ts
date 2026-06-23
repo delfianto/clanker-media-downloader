@@ -11,6 +11,18 @@ const VIEWER_MATCHES = [
   "https://www.imagebam.com/view/*",
   "https://imgbox.com/*",
   "https://ibb.co/*",
+  "https://bunkr.site/f/*",
+  "https://bunkr.su/f/*",
+  "https://bunkr.is/f/*",
+  "https://bunkr.black/f/*",
+  "https://bunkr.fi/f/*",
+  "https://bunkr.ac/f/*",
+  "https://bunkr.cat/f/*",
+  "https://bunkr.ws/f/*",
+  "https://bunkr.ph/f/*",
+  "https://bunkr.red/f/*",
+  "https://bunkr.media/f/*",
+  "https://bunkr.cr/f/*",
 ] as const;
 
 // CDN domains — where the redirector intercepts raw image URLs at document_start.
@@ -33,6 +45,7 @@ function makeManifest(target: Browser): Record<string, unknown> {
       "https://ibb.co/*",
       "https://*.ibb.co/*",
       "https://*.imgbb.com/*",
+      "https://*.cdn.cr/*",
     ],
     background: { service_worker: "src/background/index.ts", type: "module" },
     action: {
