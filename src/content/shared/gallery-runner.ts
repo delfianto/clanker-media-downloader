@@ -156,7 +156,7 @@ export function runGalleryAdapter(model: HosterModel, config: MDConfig): void {
       }
     });
 
-    viewSwitches.appendChild(dlBtn);
+    viewSwitches.prepend(dlBtn);
     return;
   }
 

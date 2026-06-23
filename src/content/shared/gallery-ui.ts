@@ -19,21 +19,21 @@ export function injectGalleryStyles(): void {
       margin: 8px 0 12px;
     }
     .md-gallery-note { font-size: 11px; color: #71717a; }
-    .md-ib-gallery-btn {
-      color: #3b82f6 !important;
-      display: inline-block;
-      margin-left: 10px;
-      font-size: 16px;
+    .main-content .view-switches a.md-ib-gallery-btn {
+      position: relative;
+      top: -0.05em;
       cursor: pointer;
-      vertical-align: middle;
+      margin-right: 12px;
+      opacity: 0.6;
+      font-size: 0.9em;
       transition: opacity 0.15s;
     }
-    .md-ib-gallery-btn:hover {
-      opacity: 0.8;
+    .main-content .view-switches a.md-ib-gallery-btn:hover {
+      opacity: 1;
     }
-    .md-ib-gallery-btn.loading {
-      color: #3b82f6 !important;
+    .main-content .view-switches a.md-ib-gallery-btn.loading {
       pointer-events: none;
+      opacity: 1;
     }
   `;
   (document.head ?? document.documentElement).appendChild(style);
