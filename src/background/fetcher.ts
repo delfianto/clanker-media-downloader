@@ -13,9 +13,37 @@ function bufferToBase64(buffer: ArrayBuffer): string {
   return btoa(binary);
 }
 
+// Fetch a URL as plain text — used by the gallery runner to scrape viewer page
+// HTML for image URL extraction without executing the page's own JS.
+export async function crossOriginFetchText(url: string): Promise<{ text: string }> {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    throw new Error(`Invalid URL: ${url}`);
+  }
+  if (!ALLOWED.has(parsed.protocol)) {
+    throw new Error(`Blocked protocol: ${parsed.protocol}`);
+  }
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 30_000);
+  try {
+    const res = await fetch(url, {
+      credentials: "include",
+      cache: "default",
+      signal: controller.signal,
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return { text: await res.text() };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 // Runs in the service worker, which has host_permissions and so bypasses page
-// CORS. credentials:omit keeps it anonymous; cache:force-cache means the first
-// download is a full request and repeats are served from the SW's HTTP cache.
+// CORS. credentials:include sends session cookies to CDN; cache:default uses
+// normal HTTP caching behaviour.
 export async function crossOriginFetchBlob(
   url: string,
 ): Promise<{ base64: string; contentType: string }> {

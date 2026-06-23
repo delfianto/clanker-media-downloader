@@ -5,10 +5,12 @@ type Browser = "chrome" | "firefox";
 
 const browser = (process.env["BROWSER"] ?? "chrome") as Browser;
 
-// Viewer pages — where the download button is injected (isolated + main world).
-const VIEWER_MATCHES = [
+// All pages where content scripts are injected — both viewer and gallery pages.
+// isolated.ts + main.ts dispatch based on pageType at runtime.
+const CONTENT_MATCHES = [
+  // Viewer pages
   "https://www.imagebam.com/image/*",
-  "https://www.imagebam.com/view/*",
+  "https://www.imagebam.com/view/*", // also covers gallery pages (distinguished by DOM)
   "https://imgbox.com/*",
   "https://ibb.co/*",
   "https://bunkr.site/f/*",
@@ -23,6 +25,21 @@ const VIEWER_MATCHES = [
   "https://bunkr.red/f/*",
   "https://bunkr.media/f/*",
   "https://bunkr.cr/f/*",
+  // Gallery pages (new)
+  "https://imgbox.com/g/*",
+  "https://ibb.co/album/*",
+  "https://bunkr.site/a/*",
+  "https://bunkr.su/a/*",
+  "https://bunkr.is/a/*",
+  "https://bunkr.black/a/*",
+  "https://bunkr.fi/a/*",
+  "https://bunkr.ac/a/*",
+  "https://bunkr.cat/a/*",
+  "https://bunkr.ws/a/*",
+  "https://bunkr.ph/a/*",
+  "https://bunkr.red/a/*",
+  "https://bunkr.media/a/*",
+  "https://bunkr.cr/a/*",
 ] as const;
 
 // CDN domains — where the redirector intercepts raw image URLs at document_start.
@@ -37,7 +54,7 @@ function makeManifest(target: Browser): Record<string, unknown> {
     description:
       "One-click image downloads from image hosting sites. Clean, private, no external server.",
     icons: { "48": "icons/icon-48.png", "96": "icons/icon-96.png" },
-    permissions: ["storage"],
+    permissions: ["storage", "downloads"],
     host_permissions: [
       "https://*.imagebam.com/*",
       "https://imgbox.com/*",
@@ -46,6 +63,19 @@ function makeManifest(target: Browser): Record<string, unknown> {
       "https://*.ibb.co/*",
       "https://*.imgbb.com/*",
       "https://*.cdn.cr/*",
+      // bunkr — needed for SW to fetch album/viewer pages for gallery resolution
+      "https://bunkr.site/*",
+      "https://bunkr.su/*",
+      "https://bunkr.is/*",
+      "https://bunkr.black/*",
+      "https://bunkr.fi/*",
+      "https://bunkr.ac/*",
+      "https://bunkr.cat/*",
+      "https://bunkr.ws/*",
+      "https://bunkr.ph/*",
+      "https://bunkr.red/*",
+      "https://bunkr.media/*",
+      "https://bunkr.cr/*",
     ],
     background: { service_worker: "src/background/index.ts", type: "module" },
     action: {
@@ -67,7 +97,7 @@ function makeManifest(target: Browser): Record<string, unknown> {
       },
       // Viewer pages — ISOLATED: config bridge + CSS injection + SW fetch relay.
       {
-        matches: [...VIEWER_MATCHES],
+        matches: [...CONTENT_MATCHES],
         js: ["src/content/isolated.ts"],
         run_at: "document_idle",
         all_frames: false,
@@ -75,7 +105,7 @@ function makeManifest(target: Browser): Record<string, unknown> {
       },
       // Viewer pages — MAIN: DOM adapter (button injection + download trigger).
       {
-        matches: [...VIEWER_MATCHES],
+        matches: [...CONTENT_MATCHES],
         js: ["src/content/main.ts"],
         run_at: "document_idle",
         all_frames: false,

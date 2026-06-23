@@ -28,4 +28,30 @@ export const bunkrModel: HosterModel = {
     uiMode: "button-overlay",
   },
   defaultCssOverrides: "",
+  galleryConfig: {
+    galleryMatches: [
+      "https://bunkr.site/a/*",
+      "https://bunkr.su/a/*",
+      "https://bunkr.is/a/*",
+      "https://bunkr.black/a/*",
+      "https://bunkr.fi/a/*",
+      "https://bunkr.ac/a/*",
+      "https://bunkr.cat/a/*",
+      "https://bunkr.ws/a/*",
+      "https://bunkr.ph/a/*",
+      "https://bunkr.red/a/*",
+      "https://bunkr.media/a/*",
+      "https://bunkr.cr/a/*",
+    ],
+    albumNameSelector: "h1",
+    albumIdFromPath: "^/a/([^/?]+)",
+    imageSource: {
+      strategy: "resolve-viewer",
+      // Album grid: <a href="/f/{fileId}">...</a> links to the file viewer page.
+      // SW fetches each viewer HTML; group 1 = jsCDN (unsigned CDN URL).
+      anchorSelector: "a[href*='/f/']",
+      extractor: 'var jsCDN = "([^"]+)"',
+      needsSign: true,
+    },
+  },
 };

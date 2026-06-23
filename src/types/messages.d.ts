@@ -12,6 +12,11 @@
 //     ISOLATED decodes the base64 back into an ArrayBuffer and transfers it
 //     zero-copy (see MDMainResponse + the [buffer] transferable).
 
+import type { DownloadJob } from "./jobs";
+import type { HosterId } from "./hoster";
+
+// ── Single-image download (existing) ────────────────────────────────────────
+
 // ISOLATED → background service worker (browser.runtime.sendMessage)
 export type MDFetchBlobRequest = {
   type: "MD_FETCH_BLOB";
@@ -37,3 +42,42 @@ export type MDMainResponse = {
   id: string;
   result: MDBlobResult;
 };
+
+// ── Gallery batch download ───────────────────────────────────────────────────
+
+// A gallery item whose image URL is already known (thumbnail-transform / anchor-href).
+// A gallery item that requires the SW to fetch a viewer page to extract the URL.
+// needsSign: true signals the bunkr sign-API step after extraction.
+export type GalleryJobItem =
+  | { kind: "resolved"; imageUrl: string; filename: string }
+  | {
+      kind: "resolve-viewer";
+      viewerUrl: string;
+      extractor: string;
+      filename: string;
+      needsSign?: true;
+    };
+
+// MAIN → ISOLATED → SW: kick off a gallery download job.
+export type MDGalleryStartRequest = {
+  type: "MD_GALLERY_START";
+  jobId: string;
+  hosterId: HosterId;
+  subfolder: string;
+  items: GalleryJobItem[];
+  maxParallel: number;
+};
+
+// SW → options page (via chrome.runtime.sendMessage — bypasses MAIN/ISOLATED relay).
+export type MDJobProgressMessage = {
+  type: "MD_JOB_PROGRESS";
+  jobId: string;
+  completedCount: number;
+  totalCount: number;
+  failedCount: number;
+  status: "running" | "done" | "error";
+};
+
+// Options page → SW: request the current job list for the Downloads tab.
+export type MDListJobsRequest = { type: "MD_LIST_JOBS" };
+export type MDListJobsResponse = { jobs: DownloadJob[] };

@@ -16,12 +16,23 @@ export type HosterOverride = {
 export type Settings = {
   enabled: boolean;
   hosters: Record<HosterId, HosterOverride>;
+  // Gallery download settings. Required (not optional) so storage.local.get(DEFAULT_SETTINGS)
+  // always fills them — no undefined footgun with exactOptionalPropertyTypes.
+  maxParallel: number; // 1–10; concurrent downloads per gallery job
+  subfolderPrefix: string; // relative subfolder prefix inside browser downloads dir; "" = none
+  autoFolderPerAlbum: boolean; // if true: downloads/{prefix}/{albumId}/file.ext
 };
 
 // Payload delivered from isolated.ts (ISOLATED, can read storage) to main.ts
 // (MAIN, cannot) over the __md_config__ CustomEvent bridge. isolated.ts only
 // dispatches when the extension + matched hoster are enabled, so the mere arrival
 // of this event is the signal for main.ts to activate that hoster's adapter.
+// Gallery settings are embedded here so MAIN world adapters don't need a
+// separate storage read.
 export type MDConfig = {
   hosterId: HosterId;
+  pageType: "viewer" | "gallery";
+  maxParallel: number;
+  subfolderPrefix: string;
+  autoFolderPerAlbum: boolean;
 };

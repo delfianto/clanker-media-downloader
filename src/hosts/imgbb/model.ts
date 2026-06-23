@@ -16,4 +16,15 @@ export const imgbbModel: HosterModel = {
     uiMode: "button-overlay",
   },
   defaultCssOverrides: "",
+  galleryConfig: {
+    galleryMatches: ["https://ibb.co/album/*"],
+    albumNameSelector: "h1",
+    albumIdFromPath: "^/album/([^/?]+)",
+    imageSource: {
+      strategy: "anchor-href",
+      // Album grid: <a href="https://ibb.co/{id}"><img src="https://i.ibb.co/{hash}/{name}.jpg"></a>
+      // The img.src IS the full-res URL — no transform needed.
+      imageSelector: "div.image-container img",
+    },
+  },
 };

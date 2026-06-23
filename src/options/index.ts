@@ -1,6 +1,8 @@
 import browser from "webextension-polyfill";
 import type { HosterId, Settings } from "../types/global";
 import type { HosterModel, RedirectRule } from "../types/hoster";
+import type { DownloadJob } from "../types/jobs";
+import type { MDJobProgressMessage, MDListJobsResponse } from "../types/messages";
 import { ALL_MODELS, getModel } from "../hosts/index";
 import { DEFAULT_SETTINGS } from "../settings/schema";
 
@@ -327,6 +329,174 @@ function renderPanel(): void {
   );
 }
 
+// ── Downloads tab ─────────────────────────────────────
+let dlRefreshTimer: ReturnType<typeof setInterval> | undefined;
+
+function formatJobStatus(job: DownloadJob): string {
+  if (job.status === "running") return `${job.completedCount} / ${job.totalCount}`;
+  if (job.status === "done") {
+    return job.failedCount > 0
+      ? `Done — ${job.failedCount} failed`
+      : `Done — ${job.totalCount} files`;
+  }
+  return `Error — ${job.failedCount} failed`;
+}
+
+function renderJobCard(job: DownloadJob): HTMLElement {
+  const statusClass =
+    job.status === "running" ? "running" : job.status === "done" ? "done" : "error";
+  const pct = job.totalCount > 0 ? job.completedCount / job.totalCount : 0;
+
+  const progress = el("progress", {});
+  progress.setAttribute("value", String(job.completedCount));
+  progress.setAttribute("max", String(job.totalCount));
+
+  return el("div", { className: "job-card", id: `job-${job.jobId}` }, [
+    el("div", { className: "job-header" }, [
+      el("span", { className: "job-title", textContent: job.subfolder || job.hosterId }),
+      el("span", { className: `job-status ${statusClass}`, textContent: formatJobStatus(job) }),
+    ]),
+    progress,
+    el("div", { className: "job-meta" }, [
+      el("span", {
+        className: "job-pct",
+        textContent: `${Math.round(pct * 100)}%`,
+      }),
+      el("span", {
+        className: "job-hoster",
+        textContent: job.hosterId,
+      }),
+    ]),
+  ]);
+}
+
+function renderDownloadsSettings(): void {
+  const container = $("dl-settings");
+  container.replaceChildren();
+
+  // Max parallel
+  const parallelInput = el("input", {
+    type: "number",
+    className: "narrow",
+    value: String(settings.maxParallel),
+    min: "1",
+    max: "10",
+  } as Partial<HTMLInputElement>);
+  parallelInput.addEventListener("change", () => {
+    const v = Math.min(10, Math.max(1, Number(parallelInput.value) || 3));
+    parallelInput.value = String(v);
+    settings.maxParallel = v;
+    persistSoon();
+  });
+
+  // Auto-folder toggle
+  const autoFolderToggle = el("input", {
+    type: "checkbox",
+    checked: settings.autoFolderPerAlbum,
+  });
+  autoFolderToggle.addEventListener("change", () => {
+    settings.autoFolderPerAlbum = autoFolderToggle.checked;
+    persist();
+  });
+
+  // Subfolder prefix
+  const prefixInput = el("input", {
+    type: "text",
+    value: settings.subfolderPrefix,
+    placeholder: "e.g. bunkr-saves",
+  });
+  prefixInput.addEventListener("input", () => {
+    settings.subfolderPrefix = prefixInput.value;
+    persistSoon();
+  });
+
+  container.append(
+    el("div", { className: "settings-field" }, [
+      el("div", {}, [
+        el("div", { className: "settings-label", textContent: "Max parallel downloads" }),
+        el("div", { className: "settings-hint", textContent: "1–10 files at a time" }),
+      ]),
+      parallelInput,
+    ]),
+    el("div", { className: "settings-field" }, [
+      el("div", {}, [
+        el("div", { className: "settings-label", textContent: "Auto-folder per album" }),
+        el("div", {
+          className: "settings-hint",
+          textContent: "Creates Downloads/{prefix}/{albumId}/ per job",
+        }),
+      ]),
+      el("label", { className: "hoster-toggle" }, [
+        el("span", { className: "switch" }, [
+          autoFolderToggle,
+          el("span", { className: "slider" }),
+        ]),
+      ]),
+    ]),
+    el("div", { className: "settings-field" }, [
+      el("div", {}, [
+        el("div", { className: "settings-label", textContent: "Subfolder prefix" }),
+        el("div", {
+          className: "settings-hint",
+          textContent: "Relative path inside your browser's downloads folder",
+        }),
+      ]),
+      prefixInput,
+    ]),
+  );
+}
+
+async function loadDownloadsTab(): Promise<void> {
+  renderDownloadsSettings();
+
+  const jobsContainer = $("dl-jobs");
+  jobsContainer.replaceChildren(el("p", { className: "default-note", textContent: "Loading…" }));
+
+  try {
+    const res = (await browser.runtime.sendMessage({ type: "MD_LIST_JOBS" })) as MDListJobsResponse;
+    jobsContainer.replaceChildren();
+    if (res.jobs.length === 0) {
+      jobsContainer.append(
+        el("p", { className: "default-note", textContent: "No downloads yet." }),
+      );
+    } else {
+      for (const job of res.jobs) jobsContainer.append(renderJobCard(job));
+    }
+  } catch {
+    jobsContainer.replaceChildren(
+      el("p", { className: "default-note", textContent: "Could not load jobs." }),
+    );
+  }
+}
+
+// ── Tabs ──────────────────────────────────────────────
+type Tab = "hosters" | "downloads";
+let activeTab: Tab = "hosters";
+
+function switchTab(tab: Tab): void {
+  activeTab = tab;
+
+  $("tab-hosters").classList.toggle("active", tab === "hosters");
+  $("tab-hosters").setAttribute("aria-selected", String(tab === "hosters"));
+  $("tab-downloads").classList.toggle("active", tab === "downloads");
+  $("tab-downloads").setAttribute("aria-selected", String(tab === "downloads"));
+
+  const hostersView = $("view-hosters");
+  const downloadsView = $("view-downloads");
+
+  if (tab === "hosters") {
+    hostersView.removeAttribute("hidden");
+    downloadsView.setAttribute("hidden", "");
+    clearInterval(dlRefreshTimer);
+  } else {
+    hostersView.setAttribute("hidden", "");
+    downloadsView.removeAttribute("hidden");
+    void loadDownloadsTab();
+    // Refresh job list every 3s while the tab is open.
+    dlRefreshTimer = setInterval(() => void loadDownloadsTab(), 3000);
+  }
+}
+
 // ── init ─────────────────────────────────────────────
 async function init(): Promise<void> {
   try {
@@ -338,6 +508,10 @@ async function init(): Promise<void> {
   for (const model of ALL_MODELS) {
     settings.hosters[model.id] ??= clone(DEFAULT_SETTINGS.hosters[model.id]);
   }
+  // Heal missing gallery settings (upgrade from older storage schema).
+  settings.maxParallel ??= DEFAULT_SETTINGS.maxParallel;
+  settings.subfolderPrefix ??= DEFAULT_SETTINGS.subfolderPrefix;
+  settings.autoFolderPerAlbum ??= DEFAULT_SETTINGS.autoFolderPerAlbum;
 
   $<HTMLSpanElement>("version").textContent = `v${browser.runtime.getManifest().version}`;
 
@@ -346,6 +520,42 @@ async function init(): Promise<void> {
   master.addEventListener("change", () => {
     settings.enabled = master.checked;
     persist();
+  });
+
+  $("tab-hosters").addEventListener("click", () => switchTab("hosters"));
+  $("tab-downloads").addEventListener("click", () => switchTab("downloads"));
+
+  // Live progress updates from the SW while the Downloads tab is open.
+  // Update card DOM elements in-place to avoid needing the full job object.
+  browser.runtime.onMessage.addListener((msg: unknown) => {
+    const m = msg as Partial<MDJobProgressMessage>;
+    if (m.type !== "MD_JOB_PROGRESS" || activeTab !== "downloads") return;
+    const card = document.getElementById(`job-${m.jobId ?? ""}`);
+    if (!card) return;
+
+    const progressEl = card.querySelector("progress");
+    if (progressEl) {
+      progressEl.setAttribute("value", String(m.completedCount ?? 0));
+      progressEl.setAttribute("max", String(m.totalCount ?? 0));
+    }
+
+    const statusEl = card.querySelector<HTMLElement>(".job-status");
+    if (statusEl) {
+      const st = m.status ?? "running";
+      const completed = m.completedCount ?? 0;
+      const total = m.totalCount ?? 0;
+      const failed = m.failedCount ?? 0;
+      statusEl.className = `job-status ${st}`;
+      if (st === "running") statusEl.textContent = `${completed} / ${total}`;
+      else if (st === "done")
+        statusEl.textContent = failed > 0 ? `Done — ${failed} failed` : `Done — ${total} files`;
+      else statusEl.textContent = `Error — ${failed} failed`;
+    }
+
+    const pctEl = card.querySelector<HTMLElement>(".job-pct");
+    const total = m.totalCount ?? 0;
+    if (pctEl && total > 0)
+      pctEl.textContent = `${Math.round(((m.completedCount ?? 0) / total) * 100)}%`;
   });
 
   renderSidebar();

@@ -30,4 +30,19 @@ export const imagebamModel: HosterModel = {
     uiMode: "inline-after",
   },
   defaultCssOverrides: "",
+  galleryConfig: {
+    // Imagebam gallery pages share /view/* with single-image viewer pages.
+    // viewerIndicator tells isolated.ts: if img.main-image is ABSENT → gallery page.
+    galleryMatches: ["https://www.imagebam.com/view/*"],
+    viewerIndicator: "img.main-image",
+    albumNameSelector: "h1",
+    albumIdFromPath: "^/(?:view|gallery)/([A-Z0-9]+)$",
+    imageSource: {
+      strategy: "resolve-viewer",
+      // Gallery thumbnail list: <li><img src="thumbs4..."><a href="/view/{imgId}">...</a></li>
+      anchorSelector: "li a[href*='/view/']",
+      // SW fetches each viewer page HTML; group 1 = the CDN src on img.main-image
+      extractor: 'img\\.main-image[^>]+src="([^"]+)"',
+    },
+  },
 };

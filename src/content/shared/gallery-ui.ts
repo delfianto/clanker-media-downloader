@@ -1,0 +1,55 @@
+const STYLE_ID = "md-gallery-styles";
+
+export function injectGalleryStyles(): void {
+  if (document.getElementById(STYLE_ID)) return;
+  const style = document.createElement("style");
+  style.id = STYLE_ID;
+  style.textContent = `
+    .md-gallery-btn {
+      display: inline-flex; align-items: center; gap: 6px;
+      background: #3b82f6; color: #fff; border: none;
+      padding: 8px 16px; border-radius: 8px; font-size: 13px; font-weight: 600;
+      cursor: pointer; transition: background 0.15s, opacity 0.15s;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    .md-gallery-btn:hover:not(:disabled) { background: #2563eb; }
+    .md-gallery-btn:disabled { opacity: 0.55; cursor: default; }
+    .md-gallery-btn-wrap {
+      display: flex; align-items: center; gap: 10px;
+      margin: 8px 0 12px;
+    }
+    .md-gallery-note { font-size: 11px; color: #71717a; }
+  `;
+  (document.head ?? document.documentElement).appendChild(style);
+}
+
+export function createDownloadAllButton(
+  totalCount: number,
+  note: string | undefined,
+  onClick: () => void,
+): HTMLElement {
+  injectGalleryStyles();
+
+  const btn = document.createElement("button");
+  btn.className = "md-gallery-btn";
+  btn.textContent = `⬇ Download All (${totalCount})`;
+
+  btn.addEventListener("click", () => {
+    btn.disabled = true;
+    btn.textContent = "Queued…";
+    onClick();
+  });
+
+  const wrap = document.createElement("div");
+  wrap.className = "md-gallery-btn-wrap";
+  wrap.appendChild(btn);
+
+  if (note) {
+    const noteEl = document.createElement("span");
+    noteEl.className = "md-gallery-note";
+    noteEl.textContent = note;
+    wrap.appendChild(noteEl);
+  }
+
+  return wrap;
+}

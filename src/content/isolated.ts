@@ -5,30 +5,54 @@ import type {
   MDBlobResult,
   MDFetchBlobRequest,
   MDFetchBlobResponse,
+  MDGalleryStartRequest,
   MDMainRequest,
   MDMainResponse,
 } from "../types/messages";
 import { ALL_MODELS } from "../hosts/index";
 import { DEFAULT_SETTINGS } from "../settings/schema";
 
-// ISOLATED world, document_idle, on viewer pages. Responsibilities:
-//   1. resolve which hoster this page belongs to and whether it's enabled,
-//   2. inject the user's CSS overrides,
-//   3. hand the matched hoster id to the MAIN world (CustomEvent bridge),
-//   4. relay MAIN's fetch requests to the SW and post the bytes back.
+// ISOLATED world, document_idle, on viewer + gallery pages. Responsibilities:
+//   1. resolve which hoster this page belongs to + whether it's viewer or gallery,
+//   2. inject the user's CSS overrides (viewer pages only),
+//   3. hand the matched hoster id + pageType + gallery settings to MAIN world,
+//   4. relay MAIN's single-image fetch requests to the SW and post bytes back,
+//   5. relay MAIN's gallery start requests to the SW (fire-and-forget).
 
-// MV3 match pattern → anchored RegExp (concrete hosts + trailing /* only).
+// MV3 match pattern → anchored RegExp.
 function patternToRegex(pattern: string): RegExp {
   const escaped = pattern.replace(/[.+?^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*");
   return new RegExp(`^${escaped}$`);
 }
 
-function matchModel(href: string, pathname: string): HosterModel | undefined {
-  return ALL_MODELS.find((model) => {
-    if (!model.viewerMatches.some((p) => patternToRegex(p).test(href))) return false;
-    const guard = model.downloadConfig.pathGuard;
-    return guard ? new RegExp(guard).test(pathname) : true;
-  });
+type PageMatch = { model: HosterModel; pageType: "viewer" | "gallery" };
+
+function matchPage(href: string, pathname: string): PageMatch | undefined {
+  for (const model of ALL_MODELS) {
+    const gc = model.galleryConfig;
+
+    // Check gallery matches first.
+    if (gc?.galleryMatches.some((p) => patternToRegex(p).test(href))) {
+      if (gc.viewerIndicator) {
+        // imagebam: viewer and gallery share /view/*. If the viewerIndicator
+        // element IS present we're on a single-image viewer; fall through.
+        if (!document.querySelector(gc.viewerIndicator)) {
+          return { model, pageType: "gallery" };
+        }
+      } else {
+        return { model, pageType: "gallery" };
+      }
+    }
+
+    // Viewer match.
+    if (model.viewerMatches.some((p) => patternToRegex(p).test(href))) {
+      const guard = model.downloadConfig.pathGuard;
+      if (!guard || new RegExp(guard).test(pathname)) {
+        return { model, pageType: "viewer" };
+      }
+    }
+  }
+  return undefined;
 }
 
 function injectCss(css: string): void {
@@ -48,14 +72,24 @@ function base64ToBuffer(base64: string): ArrayBuffer {
 
 function onMainMessage(event: MessageEvent): void {
   if (event.source !== window) return;
-  const data = event.data as Partial<MDMainRequest>;
-  if (data.type !== "MD_REQUEST" || typeof data.id !== "string" || typeof data.url !== "string") {
+  const data = event.data as Record<string, unknown>;
+  const type = data["type"];
+
+  if (type === "MD_REQUEST") {
+    const req = data as unknown as MDMainRequest;
+    if (typeof req.id === "string" && typeof req.url === "string") {
+      void relayBlob(req.id, req.url);
+    }
     return;
   }
-  void relay(data.id, data.url);
+
+  if (type === "MD_GALLERY_START") {
+    // Fire-and-forget: no response needed in MAIN world; SW handles progress.
+    void browser.runtime.sendMessage(data as unknown as MDGalleryStartRequest).catch(() => {});
+  }
 }
 
-async function relay(id: string, url: string): Promise<void> {
+async function relayBlob(id: string, url: string): Promise<void> {
   let result: MDBlobResult;
   try {
     const request: MDFetchBlobRequest = { type: "MD_FETCH_BLOB", url };
@@ -70,7 +104,6 @@ async function relay(id: string, url: string): Promise<void> {
 
   const response: MDMainResponse = { type: "MD_RESPONSE", id, result };
   if ("buffer" in result) {
-    // Transfer the ArrayBuffer zero-copy across the ISOLATED → MAIN boundary.
     window.postMessage(response, "*", [result.buffer]);
   } else {
     window.postMessage(response, "*");
@@ -86,22 +119,24 @@ async function init(): Promise<void> {
   }
   if (!settings.enabled) return;
 
-  const model = matchModel(location.href, location.pathname);
-  if (!model) return;
+  const match = matchPage(location.href, location.pathname);
+  if (!match) return;
 
+  const { model, pageType } = match;
   const override = settings.hosters[model.id];
-  if (!override.enabled) return;
+  if (!override?.enabled) return;
 
-  if (override.cssOverrides) injectCss(override.cssOverrides);
+  if (pageType === "viewer" && override.cssOverrides) injectCss(override.cssOverrides);
 
-  // Relay must be live before MAIN can issue a fetch request.
   window.addEventListener("message", onMainMessage);
 
-  // Deliver the matched hoster id to main.ts. The CustomEvent crosses the
-  // ISOLATED → MAIN boundary without tripping CSP (a DOM event is not script
-  // execution); main.ts registers its listener synchronously at load, before
-  // this async path resumes past the storage await.
-  const config: MDConfig = { hosterId: model.id };
+  const config: MDConfig = {
+    hosterId: model.id,
+    pageType,
+    maxParallel: settings.maxParallel,
+    subfolderPrefix: settings.subfolderPrefix,
+    autoFolderPerAlbum: settings.autoFolderPerAlbum,
+  };
   document.dispatchEvent(new CustomEvent("__md_config__", { detail: JSON.stringify(config) }));
 }
 

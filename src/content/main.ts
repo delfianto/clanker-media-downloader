@@ -5,6 +5,7 @@ import { activate as activateImagebam } from "../hosts/imagebam/adapter";
 import { activate as activateImgbox } from "../hosts/imgbox/adapter";
 import { activate as activateImgbb } from "../hosts/imgbb/adapter";
 import { activate as activateBunkr } from "../hosts/bunkr/adapter";
+import { runGalleryAdapter } from "./shared/gallery-runner";
 
 const ADAPTERS: Record<HosterId, (model: HosterModel) => void> = {
   imagebam: activateImagebam,
@@ -24,7 +25,13 @@ document.addEventListener(
     try {
       const config = JSON.parse((event as CustomEvent<string>).detail) as MDConfig;
       const model = getModel(config.hosterId);
-      if (model) ADAPTERS[config.hosterId](model);
+      if (!model) return;
+
+      if (config.pageType === "gallery") {
+        runGalleryAdapter(model, config);
+      } else {
+        ADAPTERS[config.hosterId]?.(model);
+      }
     } catch {}
   },
   { once: true },

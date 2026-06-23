@@ -22,13 +22,34 @@
       </label>
     </header>
 
-    <div class="layout">
-      <nav class="sidebar">
-        <h2>Hosters</h2>
-        <ul id="hoster-list"></ul>
-      </nav>
+    <div class="tab-bar" role="tablist">
+      <button class="tab-btn active" id="tab-hosters" role="tab" aria-selected="true">
+        Hosters
+      </button>
+      <button class="tab-btn" id="tab-downloads" role="tab" aria-selected="false">Downloads</button>
+    </div>
 
-      <main class="panel" id="panel"></main>
+    <div id="view-hosters">
+      <div class="layout">
+        <nav class="sidebar">
+          <h2>Hosters</h2>
+          <ul id="hoster-list"></ul>
+        </nav>
+        <main class="panel" id="panel"></main>
+      </div>
+    </div>
+
+    <div id="view-downloads" hidden>
+      <div class="downloads-view">
+        <section class="dl-settings-section">
+          <div class="section-head"><h3>Download Behaviour</h3></div>
+          <div id="dl-settings"></div>
+        </section>
+        <section class="dl-jobs-section">
+          <div class="section-head"><h3>Recent Downloads</h3></div>
+          <div id="dl-jobs"></div>
+        </section>
+      </div>
     </div>
 
     <div class="toast" id="toast" role="status" aria-live="polite"></div>

@@ -12,4 +12,7 @@ export const DEFAULT_SETTINGS: Settings = {
     imgbb: { enabled: true, redirectRules: null, cssOverrides: "" },
     bunkr: { enabled: true, redirectRules: null, cssOverrides: "" },
   },
+  maxParallel: 3,
+  subfolderPrefix: "",
+  autoFolderPerAlbum: true,
 };
