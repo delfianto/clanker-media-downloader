@@ -33,3 +33,26 @@ export function request(url: string, timeoutMs = 45_000): Promise<MDBlobResult> 
     window.postMessage(message, "*");
   });
 }
+
+export function requestDownloadSingle(
+  url: string,
+  filename: string,
+  subfolder: string,
+  timeoutMs = 45_000,
+): Promise<MDBlobResult> {
+  const id = crypto.randomUUID();
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => {
+      pending.delete(id);
+      resolve({ error: "Timed out waiting for the download" });
+    }, timeoutMs);
+
+    pending.set(id, (result) => {
+      clearTimeout(timer);
+      resolve(result);
+    });
+
+    const message = { type: "MD_DOWNLOAD_SINGLE" as const, id, url, filename, subfolder };
+    window.postMessage(message, "*");
+  });
+}

@@ -1,14 +1,27 @@
-import { request } from "./bridge";
+import type { MDConfig } from "../../types/global";
+import type { HosterModel } from "../../types/hoster";
+import { requestDownloadSingle } from "./bridge";
 
-// MAIN world. Ask the bridge for the bytes, wrap them in a Blob, and trigger a
-// same-origin object-URL download — no chrome.downloads permission needed.
-export async function downloadBlob(url: string, filename: string): Promise<void> {
-  const result = await request(url);
+// MAIN world. Ask the bridge to request a download via background SW.
+export async function downloadBlob(
+  url: string,
+  filename: string,
+  config?: MDConfig,
+  model?: HosterModel,
+): Promise<void> {
+  let subfolder = "";
+  if (config) {
+    let albumId = "";
+    if (model?.getGalleryName) {
+      albumId = model.getGalleryName(document) ?? "";
+    }
+    if (config.autoFolderPerAlbum && albumId) {
+      subfolder = config.subfolderPrefix ? `${config.subfolderPrefix}/${albumId}` : albumId;
+    } else {
+      subfolder = config.subfolderPrefix;
+    }
+  }
+
+  const result = await requestDownloadSingle(url, filename, subfolder);
   if ("error" in result) throw new Error(result.error);
-
-  const blob = new Blob([result.buffer], { type: result.contentType });
-  const href = URL.createObjectURL(blob);
-  const anchor = Object.assign(document.createElement("a"), { href, download: filename });
-  anchor.click();
-  setTimeout(() => URL.revokeObjectURL(href), 100);
 }

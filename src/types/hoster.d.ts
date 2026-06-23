@@ -69,4 +69,5 @@ export type HosterModel = {
   downloadConfig: DownloadConfig;
   defaultCssOverrides: string; // empty string when none
   galleryConfig?: GalleryConfig; // undefined = no gallery support for this hoster
+  getGalleryName?: (doc: Document) => string | null; // Abstraction to detect gallery name/ID from page DOM
 };

@@ -1,8 +1,9 @@
+import type { MDConfig } from "../../types/global";
 import type { HosterModel } from "../../types/hoster";
 import { resolveFilename } from "../../content/shared/filename";
 import { downloadBlob } from "../../content/shared/downloader";
 
-export function activate(model: HosterModel): void {
+export function activate(model: HosterModel, config: MDConfig): void {
   const cfg = model.downloadConfig;
   const button = document.querySelector<HTMLAnchorElement>(cfg.buttonSelector);
   if (!button) return;
@@ -20,6 +21,6 @@ export function activate(model: HosterModel): void {
     const url = img?.src;
     if (!url?.startsWith("http")) return;
 
-    void downloadBlob(url, resolveFilename(cfg.filenameStrategy) || "download");
+    void downloadBlob(url, resolveFilename(cfg.filenameStrategy) || "download", config, model);
   });
 }

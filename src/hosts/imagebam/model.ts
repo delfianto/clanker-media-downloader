@@ -46,4 +46,21 @@ export const imagebamModel: HosterModel = {
       extractor: '<img src="([^"]+)"[^>]*class="main-image',
     },
   },
+  getGalleryName: (doc: Document) => {
+    const galleryNameEl = doc.querySelector("#gallery-name");
+    if (galleryNameEl?.textContent) {
+      return galleryNameEl.textContent.trim();
+    }
+    const backLink = Array.from(doc.querySelectorAll("a")).find(
+      (a) => a.textContent?.includes("Back to gallery") || !!a.querySelector(".fa-reply"),
+    );
+    if (backLink) {
+      const href = backLink.getAttribute("href") || "";
+      const match = /\/view\/([A-Z0-9]+)/.exec(href);
+      if (match?.[1]) {
+        return match[1];
+      }
+    }
+    return null;
+  },
 };

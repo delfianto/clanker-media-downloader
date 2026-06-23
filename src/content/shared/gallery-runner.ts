@@ -90,7 +90,10 @@ export function runGalleryAdapter(model: HosterModel, config: MDConfig): void {
 
   const albumIdMatch = new RegExp(gc.albumIdFromPath).exec(location.pathname);
   const albumId = albumIdMatch?.[1] ?? location.pathname.split("/").at(-1) ?? "album";
-  const albumName = document.querySelector(gc.albumNameSelector)?.textContent?.trim() ?? albumId;
+
+  const albumName = model.getGalleryName
+    ? (model.getGalleryName(document) ?? albumId)
+    : (document.querySelector(gc.albumNameSelector)?.textContent?.trim() ?? albumId);
 
   let items: GalleryJobItem[];
   switch (gc.imageSource.strategy) {

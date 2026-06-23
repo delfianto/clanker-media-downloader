@@ -7,7 +7,7 @@ import { activate as activateImgbb } from "../hosts/imgbb/adapter";
 import { activate as activateBunkr } from "../hosts/bunkr/adapter";
 import { runGalleryAdapter } from "./shared/gallery-runner";
 
-const ADAPTERS: Record<HosterId, (model: HosterModel) => void> = {
+const ADAPTERS: Record<HosterId, (model: HosterModel, config: MDConfig) => void> = {
   imagebam: activateImagebam,
   imgbox: activateImgbox,
   imgbb: activateImgbb,
@@ -30,7 +30,7 @@ document.addEventListener(
       if (config.pageType === "gallery") {
         runGalleryAdapter(model, config);
       } else {
-        ADAPTERS[config.hosterId]?.(model);
+        ADAPTERS[config.hosterId]?.(model, config);
       }
     } catch {}
   },

@@ -1,9 +1,10 @@
+import type { MDConfig } from "../../types/global";
 import type { HosterModel } from "../../types/hoster";
 import { injectButtonStyles } from "../../content/shared/ui";
 import { resolveFilename } from "../../content/shared/filename";
 import { wireButton } from "../../content/shared/wire";
 
-export function activate(model: HosterModel): void {
+export function activate(model: HosterModel, config: MDConfig): void {
   const cfg = model.downloadConfig;
 
   const downloadAnchor = document.querySelector<HTMLAnchorElement>(cfg.buttonSelector);
@@ -48,5 +49,5 @@ export function activate(model: HosterModel): void {
     downloadAnchor.style.display = "none";
   }
 
-  wireButton(dlBtn, url, () => resolveFilename(cfg.filenameStrategy));
+  wireButton(dlBtn, url, () => resolveFilename(cfg.filenameStrategy), config, model);
 }

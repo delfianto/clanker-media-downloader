@@ -83,10 +83,48 @@ function onMainMessage(event: MessageEvent): void {
     return;
   }
 
+  if (type === "MD_DOWNLOAD_SINGLE") {
+    const req = data as { id: string; url: string; filename: string; subfolder: string };
+    if (
+      typeof req.id === "string" &&
+      typeof req.url === "string" &&
+      typeof req.filename === "string"
+    ) {
+      void relayDownloadSingle(req.id, req.url, req.filename, req.subfolder || "");
+    }
+    return;
+  }
+
   if (type === "MD_GALLERY_START") {
     // Fire-and-forget: no response needed in MAIN world; SW handles progress.
     void browser.runtime.sendMessage(data as unknown as MDGalleryStartRequest).catch(() => {});
   }
+}
+
+async function relayDownloadSingle(
+  id: string,
+  url: string,
+  filename: string,
+  subfolder: string,
+): Promise<void> {
+  let result: MDBlobResult;
+  try {
+    const res = (await browser.runtime.sendMessage({
+      type: "MD_DOWNLOAD_SINGLE",
+      url,
+      filename,
+      subfolder,
+    })) as { error?: string } | void;
+    result =
+      res && "error" in res && res.error
+        ? { error: res.error }
+        : { buffer: new ArrayBuffer(0), contentType: "" };
+  } catch (e) {
+    result = { error: e instanceof Error ? e.message : String(e) };
+  }
+
+  const response: MDMainResponse = { type: "MD_RESPONSE", id, result };
+  window.postMessage(response, "*");
 }
 
 async function relayBlob(id: string, url: string): Promise<void> {
