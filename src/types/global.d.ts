@@ -24,6 +24,7 @@ export type Settings = {
   downloadDirectory: string; // relative download directory inside browser downloads dir; "" = none
   autoFolderPerAlbum: boolean; // if true: downloads/{directory}/{albumId}/file.ext
   verboseLogging: boolean; // if true: SW emits debug-level entries to the Logs tab
+  maxDownloadRetries: number; // 0–10; number of retry attempts for transient download errors
 };
 
 // Payload delivered from isolated.ts (ISOLATED, can read storage) to main.ts

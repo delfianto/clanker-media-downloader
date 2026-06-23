@@ -20,4 +20,5 @@ export const DEFAULT_SETTINGS: Settings = {
   downloadDirectory: "Clanker",
   autoFolderPerAlbum: true,
   verboseLogging: true,
+  maxDownloadRetries: 5,
 };

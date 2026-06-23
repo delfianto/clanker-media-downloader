@@ -10,6 +10,7 @@ import { appendLog } from "./logger";
 import { getModel } from "../hosts/index";
 import { isMediaFile, isTransientError } from "./media-util";
 import { sanitizeFilename } from "./sanitize";
+import { DEFAULT_SETTINGS } from "../settings/schema";
 
 const JOBS_KEY = "downloadJobs";
 
@@ -185,8 +186,6 @@ async function resolveItem(item: GalleryJobItem, jobId: string, hosterId: string
 
 // ── Concurrency queue ────────────────────────────────────────────────────────
 
-const MAX_DOWNLOAD_RETRIES = 5;
-
 function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
 }
@@ -291,6 +290,7 @@ async function runQueue(
   job: DownloadJob,
   entries: QueueEntry[],
   maxParallel: number,
+  maxRetries: number,
 ): Promise<void> {
   let cursor = 0;
 
@@ -337,12 +337,12 @@ async function runQueue(
       try {
         let succeeded = false;
         let lastErr: unknown;
-        for (let attempt = 0; attempt <= MAX_DOWNLOAD_RETRIES; attempt++) {
+        for (let attempt = 0; attempt <= maxRetries; attempt++) {
           if (attempt > 0) {
             const backoff = 1000 * 2 ** (attempt - 1);
             void appendLog(
               "debug",
-              `Retry ${attempt}/${MAX_DOWNLOAD_RETRIES} for ${safeFilename} in ${backoff}ms`,
+              `Retry ${attempt}/${maxRetries} for ${safeFilename} in ${backoff}ms`,
               job.jobId,
             );
             await sleep(backoff);
@@ -353,7 +353,7 @@ async function runQueue(
             break;
           } catch (dlErr) {
             lastErr = dlErr;
-            if (attempt < MAX_DOWNLOAD_RETRIES && isTransientError(dlErr)) continue;
+            if (attempt < maxRetries && isTransientError(dlErr)) continue;
             break;
           }
         }
@@ -425,11 +425,20 @@ export async function startGalleryJob(req: MDGalleryStartRequest): Promise<void>
     job.jobId,
   );
 
+  // Read maxDownloadRetries from settings
+  const stored = await browser.storage.local.get({
+    maxDownloadRetries: DEFAULT_SETTINGS.maxDownloadRetries,
+  });
+  const maxRetries =
+    typeof stored["maxDownloadRetries"] === "number"
+      ? stored["maxDownloadRetries"]
+      : DEFAULT_SETTINGS.maxDownloadRetries;
+
   // Run both queues concurrently — images at maxParallelImg, media at maxParallelVid.
   // Both share the same job counters; job completes when both queues drain.
   await Promise.all([
-    runQueue(job, imageEntries, req.maxParallelImg),
-    runQueue(job, mediaEntries, req.maxParallelVid),
+    runQueue(job, imageEntries, req.maxParallelImg, maxRetries),
+    runQueue(job, mediaEntries, req.maxParallelVid, maxRetries),
   ]);
 
   job.status = job.failedCount > 0 ? "error" : "done";

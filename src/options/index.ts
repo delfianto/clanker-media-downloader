@@ -481,6 +481,21 @@ function renderDownloadsSettings(): void {
     persistSoon();
   });
 
+  // Max download retries
+  const retriesInput = el("input", {
+    type: "number",
+    className: "narrow",
+    value: String(settings.maxDownloadRetries),
+    min: "0",
+    max: "10",
+  } as Partial<HTMLInputElement>);
+  retriesInput.addEventListener("change", () => {
+    const v = Math.min(10, Math.max(0, Number(retriesInput.value) || 0));
+    retriesInput.value = String(v);
+    settings.maxDownloadRetries = v;
+    persistSoon();
+  });
+
   // Auto-folder toggle
   const autoFolderToggle = el("input", {
     type: "checkbox",
@@ -519,6 +534,7 @@ function renderDownloadsSettings(): void {
     if (!confirm("Reset all download settings to defaults?")) return;
     settings.maxParallelImg = DEFAULT_SETTINGS.maxParallelImg;
     settings.maxParallelVid = DEFAULT_SETTINGS.maxParallelVid;
+    settings.maxDownloadRetries = DEFAULT_SETTINGS.maxDownloadRetries;
     settings.downloadDirectory = DEFAULT_SETTINGS.downloadDirectory;
     settings.autoFolderPerAlbum = DEFAULT_SETTINGS.autoFolderPerAlbum;
     settings.verboseLogging = DEFAULT_SETTINGS.verboseLogging;
@@ -544,6 +560,16 @@ function renderDownloadsSettings(): void {
         }),
       ]),
       parallelVideoInput,
+    ]),
+    el("div", { className: "settings-field" }, [
+      el("div", {}, [
+        el("div", { className: "settings-label", textContent: "Max download retries" }),
+        el("div", {
+          className: "settings-hint",
+          textContent: "0–10 retry attempts for transient errors (SERVER_FAILED, NETWORK_FAILED)",
+        }),
+      ]),
+      retriesInput,
     ]),
     el("div", { className: "settings-field" }, [
       el("div", {}, [
@@ -711,6 +737,7 @@ async function init(): Promise<void> {
   // Heal missing gallery/log settings (upgrade from older storage schema).
   settings.maxParallelImg ??= DEFAULT_SETTINGS.maxParallelImg;
   settings.maxParallelVid ??= DEFAULT_SETTINGS.maxParallelVid;
+  settings.maxDownloadRetries ??= DEFAULT_SETTINGS.maxDownloadRetries;
   settings.downloadDirectory ??=
     (settings as any).subfolderPrefix ?? DEFAULT_SETTINGS.downloadDirectory;
   settings.autoFolderPerAlbum ??= DEFAULT_SETTINGS.autoFolderPerAlbum;
