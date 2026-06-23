@@ -83,7 +83,7 @@ export const girlsreleasedModel: HosterModel = {
   },
   defaultCssOverrides: "",
   galleryConfig: {
-    galleryMatches: ["https://girlsreleased.com/set/*"],
+    galleryMatches: ["https://girlsreleased.com/set/*", "https://*.girlsreleased.com/set/*"],
     albumNameSelector: "h1",
     albumIdFromPath: "^/set/([^/?]+)",
     waitForSelector: "h1",

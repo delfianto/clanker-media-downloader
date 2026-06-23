@@ -163,20 +163,45 @@ async function init(): Promise<void> {
   }
   if (!settings.enabled) return;
 
-  const match = matchPage(location.href, location.pathname);
-  if (!match) return;
+  let lastUrl = location.href;
 
-  const { model, pageType } = match;
-  const override = settings.hosters[model.id];
-  if (!override?.enabled) return;
+  function checkAndTrigger() {
+    const match = matchPage(location.href, location.pathname);
+    if (!match) return;
 
-  if (model.id === "imagebam") {
-    if (!document.cookie.includes("nsfw_inter=1")) {
-      document.cookie = "nsfw_inter=1; path=/; max-age=21600";
+    const { model, pageType } = match;
+    const override = settings.hosters[model.id];
+    if (!override?.enabled) return;
+
+    if (model.id === "imagebam") {
+      if (!document.cookie.includes("nsfw_inter=1")) {
+        document.cookie = "nsfw_inter=1; path=/; max-age=21600";
+      }
     }
+
+    if (pageType === "viewer" && override.cssOverrides) injectCss(override.cssOverrides);
+
+    const config: MDConfig = {
+      hosterId: model.id,
+      pageType,
+      maxParallelImg: settings.maxParallelImg,
+      maxParallelVid: settings.maxParallelVid,
+      downloadDirectory: settings.downloadDirectory,
+      autoFolderPerAlbum: settings.autoFolderPerAlbum,
+      useFallbackName: override.useFallbackName,
+    };
+    document.dispatchEvent(new CustomEvent("__md_config__", { detail: JSON.stringify(config) }));
   }
 
-  if (pageType === "viewer" && override.cssOverrides) injectCss(override.cssOverrides);
+  checkAndTrigger();
+
+  // Poll for SPA location changes
+  setInterval(() => {
+    if (location.href !== lastUrl) {
+      lastUrl = location.href;
+      checkAndTrigger();
+    }
+  }, 500);
 
   window.addEventListener("message", onMainMessage);
 
@@ -186,17 +211,6 @@ async function init(): Promise<void> {
       window.postMessage(m, "*");
     }
   });
-
-  const config: MDConfig = {
-    hosterId: model.id,
-    pageType,
-    maxParallelImg: settings.maxParallelImg,
-    maxParallelVid: settings.maxParallelVid,
-    downloadDirectory: settings.downloadDirectory,
-    autoFolderPerAlbum: settings.autoFolderPerAlbum,
-    useFallbackName: override.useFallbackName,
-  };
-  document.dispatchEvent(new CustomEvent("__md_config__", { detail: JSON.stringify(config) }));
 }
 
 void init().catch(() => {});

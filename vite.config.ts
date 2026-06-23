@@ -23,7 +23,8 @@ const CONTENT_MATCHES = [
   "https://*.erome.com/a/*",
   "https://jpg6.su/album/*",
   "https://jpg6.su/*",
-  "https://girlsreleased.com/set/*",
+  "https://girlsreleased.com/*",
+  "https://*.girlsreleased.com/*",
 ] as const;
 
 // CDN domains — where the redirector intercepts raw image URLs at document_start.
@@ -53,6 +54,7 @@ function makeManifest(target: Browser): Record<string, unknown> {
       "https://jpg6.su/*",
       "https://*.cuckcapital.cr/*",
       "https://girlsreleased.com/*",
+      "https://*.girlsreleased.com/*",
       "https://*.imx.to/*",
     ],
     background: { service_worker: "src/background/index.ts", type: "module" },

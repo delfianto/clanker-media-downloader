@@ -56,21 +56,17 @@ const GALLERY_ADAPTERS: Record<HosterId, GalleryAdapterFn> = {
 // is always in place before the event fires. Its arrival is the activation
 // signal: isolated.ts only sends it when the extension and the matched hoster
 // are both enabled.
-document.addEventListener(
-  "__md_config__",
-  (event) => {
-    try {
-      const config = JSON.parse((event as CustomEvent<string>).detail) as MDConfig;
-      const model = getModel(config.hosterId);
-      if (!model) return;
+document.addEventListener("__md_config__", (event) => {
+  try {
+    const config = JSON.parse((event as CustomEvent<string>).detail) as MDConfig;
+    const model = getModel(config.hosterId);
+    if (!model) return;
 
-      if (config.pageType === "gallery") {
-        const galleryAdapter = GALLERY_ADAPTERS[config.hosterId];
-        if (galleryAdapter) runGalleryAdapter(model, config, galleryAdapter);
-      } else {
-        ADAPTERS[config.hosterId]?.(model, config);
-      }
-    } catch {}
-  },
-  { once: true },
-);
+    if (config.pageType === "gallery") {
+      const galleryAdapter = GALLERY_ADAPTERS[config.hosterId];
+      if (galleryAdapter) runGalleryAdapter(model, config, galleryAdapter);
+    } else {
+      ADAPTERS[config.hosterId]?.(model, config);
+    }
+  } catch {}
+});

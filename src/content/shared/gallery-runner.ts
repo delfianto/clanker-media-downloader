@@ -184,6 +184,8 @@ async function fetchAdditionalItems(
 // items, handles pagination, and dispatches to the adapter.
 export type GalleryAdapterFn = (model: HosterModel, ctx: GalleryCtx) => void;
 
+let activeInterval: any = null;
+
 export function runGalleryAdapter(
   model: HosterModel,
   config: MDConfig,
@@ -191,6 +193,15 @@ export function runGalleryAdapter(
 ): void {
   const gc = model.galleryConfig;
   if (!gc) return;
+
+  if (activeInterval) {
+    clearInterval(activeInterval);
+    activeInterval = null;
+  }
+
+  // Remove any previously injected gallery buttons to avoid duplicates on SPA transitions
+  document.querySelectorAll("[class*='gallery-btn']").forEach((el) => el.remove());
+  document.querySelectorAll(".md-gallery-btn-wrap").forEach((el) => el.remove());
 
   function run() {
     const albumIdMatch = new RegExp(gc!.albumIdFromPath).exec(location.pathname);
@@ -275,14 +286,16 @@ export function runGalleryAdapter(
   if (gc.waitForSelector && !document.querySelector(gc.waitForSelector)) {
     const selector = gc.waitForSelector;
     let elapsed = 0;
-    const interval = setInterval(() => {
+    activeInterval = setInterval(() => {
       if (document.querySelector(selector)) {
-        clearInterval(interval);
+        clearInterval(activeInterval);
+        activeInterval = null;
         run();
       } else {
         elapsed += 250;
         if (elapsed >= 10000) {
-          clearInterval(interval);
+          clearInterval(activeInterval);
+          activeInterval = null;
           console.warn(`[md] Timed out waiting for selector: ${selector}`);
         }
       }
