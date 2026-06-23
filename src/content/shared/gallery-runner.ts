@@ -273,39 +273,74 @@ export function runGalleryAdapter(
       }
 
       // If we are crawling a listing/site page (represented by items with /set/ viewer URLs),
-      // fetch each set page in parallel and extract its real items.
+      // fetch each set page's API data in parallel and extract its real items.
       const hasSets = jobItems.some(
         (item) => item.kind === "resolve-viewer" && item.viewerUrl.includes("/set/"),
       );
       if (hasSets) {
         btnElement.innerHTML = loadingIcon;
         const expandedItems: GalleryJobItem[] = [];
-        const parser = new DOMParser();
 
-        // Fetch all set pages in parallel
+        // Fetch all set pages' API data in parallel
         await Promise.all(
           jobItems.map(async (item) => {
             if (item.kind === "resolve-viewer" && item.viewerUrl.includes("/set/")) {
               try {
-                const res = await fetch(item.viewerUrl);
-                if (!res.ok) throw new Error(`HTTP ${res.status}`);
-                const htmlText = await res.text();
-                const doc = parser.parseFromString(htmlText, "text/html");
+                const setIdMatch = /\/set\/(\d+)/.exec(item.viewerUrl);
+                const setId = setIdMatch?.[1];
+                if (!setId) return;
 
-                // Get the set name to use as a subfolder override
-                const detectedSetName = model.getGalleryName ? model.getGalleryName(doc) : null;
+                const res = await fetch(`/api/0.3/set/${setId}`);
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                const data = await res.json();
+
+                const setArray = data?.set;
+                if (!Array.isArray(setArray)) return;
+
+                const setName = setArray[1] || "";
+                const siteName = setArray[3] || "";
+                const filesArray = setArray[4] || [];
+                const models = setArray[5];
+                const modelName = Array.isArray(models) && models[0] ? models[0][1] : "";
+
+                let cleanSite = siteName.replace(/\.[a-z]{2,6}$/i, "");
+                cleanSite = cleanSite.charAt(0).toUpperCase() + cleanSite.slice(1);
+
+                const cleanSetName = setName.replace(/\s*\/\s*/g, " - ");
+                const detectedSetName = modelName
+                  ? `${cleanSite}/${modelName} - ${cleanSetName}`
+                  : `${cleanSite}/${cleanSetName}`;
+
                 const setSubfolder = detectedSetName ? buildSubfolder(detectedSetName, config) : "";
 
-                // Collect the real image/viewer items from this set page
-                let setRealItems: GalleryJobItem[] = [];
-                if (gc!.collectAllItems) {
-                  setRealItems = gc!.collectAllItems(doc);
-                }
+                for (const file of filesArray) {
+                  if (!Array.isArray(file) || file.length < 6) continue;
+                  const viewerUrl = file[3] as string;
+                  const thumbnailUrl = (file[4] as string) || "";
+                  const originalFilename = (file[5] as string) || "";
+                  if (!viewerUrl && !thumbnailUrl) continue;
 
-                // Map each item to have this set's subfolder
-                for (const realItem of setRealItems) {
-                  realItem.subfolder = setSubfolder;
-                  expandedItems.push(realItem);
+                  const filename = originalFilename || viewerUrl?.split("/").at(-1) || "file";
+
+                  // If we have an imx.to thumbnail, derive the full-res URL directly
+                  // by replacing /u/t/ (thumbnail) with /u/i/ (full image).
+                  // This skips both the GET and POST to imx.to entirely.
+                  if (thumbnailUrl.includes("/u/t/")) {
+                    expandedItems.push({
+                      kind: "resolved",
+                      imageUrl: thumbnailUrl.replace("/u/t/", "/u/i/"),
+                      filename,
+                      subfolder: setSubfolder,
+                    });
+                  } else {
+                    expandedItems.push({
+                      kind: "resolve-viewer",
+                      viewerUrl,
+                      extractor: "continuebutton",
+                      filename,
+                      subfolder: setSubfolder,
+                    });
+                  }
                 }
               } catch (err) {
                 console.error(`[md] failed to crawl set ${item.viewerUrl}:`, err);
@@ -316,6 +351,9 @@ export function runGalleryAdapter(
           }),
         );
         jobItems = expandedItems;
+        console.log(
+          `[md] set expansion complete: ${expandedItems.length} items from ${jobItems.length > 0 ? "sets" : "0 sets"}`,
+        );
       }
 
       btnElement.innerHTML = loadingIcon;

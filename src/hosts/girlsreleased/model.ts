@@ -95,6 +95,29 @@ async function resolveGirlsreleasedUrl(
     return filename ? { url: imgMatch[1], filename } : imgMatch[1];
   }
 
+  if (viewerUrl.includes("imagevenue.com")) {
+    // ImageVenue has an interstitial on first fetch. The SW already did one GET
+    // (in resolveItem), so cookies should be set. Second fetch gets the real page.
+    const res = await fetch(viewerUrl, { credentials: "include" });
+    if (!res.ok) throw new Error(`ImageVenue HTTP ${res.status}`);
+    const html = await res.text();
+
+    // Look for the main image — typically <img class="img-fluid" src="...">
+    const imgMatch =
+      html.match(
+        /<img[^>]+class=["'][^"]*img-fluid[^"]*["'][^>]+src=["'](https?:\/\/[^"']+)["']/i,
+      ) ||
+      html.match(/<img[^>]+src=["'](https?:\/\/cdn[^"']+\.(?:jpg|jpeg|png|gif|webp)[^"']*)["']/i) ||
+      html.match(/property=["']og:image["'][^>]+content=["'](https?:\/\/[^"']+)["']/i);
+
+    if (imgMatch?.[1]) {
+      const titleMatch = html.match(/<title>[^<]*?-\s*([^<]+)<\/title>/i);
+      const filename = titleMatch?.[1]?.trim();
+      return filename ? { url: imgMatch[1], filename } : imgMatch[1];
+    }
+    throw new Error("Failed to extract image URL from ImageVenue page");
+  }
+
   return rawUrl;
 }
 
@@ -125,7 +148,6 @@ export const girlsreleasedModel: HosterModel = {
       imageSelector: "#root img",
     },
     collectAllItems: collectGirlsreleasedItems,
-    extractFromViewer: () => ({ url: "dummy" }),
     resolveUrl: resolveGirlsreleasedUrl,
   },
   getGalleryName: (doc: Document) => {

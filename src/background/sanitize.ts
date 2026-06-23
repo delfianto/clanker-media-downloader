@@ -4,6 +4,7 @@
 // Also trims leading/trailing spaces and dots (Windows rejects those).
 
 const ILLEGAL_CHARS = new RegExp('[/\\\\:*?"<>|]', "g");
+// eslint-disable-next-line no-control-regex -- intentionally strip control chars (0x00-0x1F) from filenames
 const CONTROL_CHARS = /[\u0000-\u001f]/g;
 
 export function sanitizeFilename(name: string): string {

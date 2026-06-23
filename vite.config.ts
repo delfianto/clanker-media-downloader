@@ -1,4 +1,4 @@
-import { defineConfig } from "vite-plus";
+import { defineConfig, type PluginOption } from "vite-plus";
 import webExtension from "vite-plugin-web-extension";
 import { BUNKR_DOMAINS } from "./src/hosts/bunkr/model";
 
@@ -56,6 +56,8 @@ function makeManifest(target: Browser): Record<string, unknown> {
       "https://girlsreleased.com/*",
       "https://*.girlsreleased.com/*",
       "https://*.imx.to/*",
+      "https://www.imagevenue.com/*",
+      "https://*.imagevenue.com/*",
     ],
     background: { service_worker: "src/background/index.ts", type: "module" },
     action: {
@@ -128,11 +130,15 @@ export default defineConfig({
     ignorePatterns: ["build/**", "node_modules/**", "**/*.md"],
   },
 
+  // vite-plugin-web-extension is typed against a different copy of vite than
+  // vite-plus bundles, so its PluginOption is nominally (not structurally)
+  // incompatible. Cast across the boundary to avoid the recursive-type compare
+  // (TS2321 excessive stack depth / TS2769 overload mismatch).
   plugins: [
     webExtension({
       browser,
       manifest: () => makeManifest(browser),
       additionalInputs: ["src/offscreen/index.html"],
     }),
-  ],
+  ] as unknown as PluginOption[],
 });

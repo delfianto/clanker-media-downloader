@@ -190,7 +190,7 @@ async function init(): Promise<void> {
       maxParallelVid: settings.maxParallelVid,
       downloadDirectory: settings.downloadDirectory,
       autoFolderPerAlbum: settings.autoFolderPerAlbum,
-      useFallbackName: override.useFallbackName,
+      useFallbackName: override.useFallbackName ?? false,
     };
     document.dispatchEvent(new CustomEvent("__md_config__", { detail: JSON.stringify(config) }));
   }

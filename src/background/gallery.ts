@@ -89,7 +89,7 @@ function broadcastProgress(job: DownloadJob): void {
     totalCount: job.totalCount,
     failedCount: job.failedCount,
     status: job.status,
-    items: job.items,
+    ...(job.items ? { items: job.items } : {}),
   };
   void browser.runtime.sendMessage(msg).catch(() => {});
   void broadcastProgressToTabs(job);
@@ -163,6 +163,27 @@ async function resolveItem(item: GalleryJobItem, jobId: string, hosterId: string
     }
   }
 
+  if (filenameOverride) {
+    item.filename = filenameOverride;
+  }
+
+  // A model's resolveUrl is the source of truth when present, in two shapes:
+  //   • with extractFromViewer (bunkr): it signs the already-extracted rawUrl,
+  //     so a missing rawUrl means extraction failed → fall through to the error.
+  //   • without extractFromViewer (girlsreleased): it derives the URL from the
+  //     viewer page itself (imx.to's POST interstitial), so rawUrl is absent.
+  if (gc?.resolveUrl && (rawUrl || !gc.extractFromViewer)) {
+    if (rawUrl) void appendLog("debug", `Resolving URL: ${rawUrl}`, jobId);
+    const resolved = await gc.resolveUrl(rawUrl ?? "", item.viewerUrl);
+    if (typeof resolved === "string") {
+      return resolved;
+    }
+    if (resolved.filename) {
+      item.filename = resolved.filename;
+    }
+    return resolved.url;
+  }
+
   if (!rawUrl) {
     void appendLog(
       "error",
@@ -172,22 +193,6 @@ async function resolveItem(item: GalleryJobItem, jobId: string, hosterId: string
     throw new Error(`extractor found no match in ${item.viewerUrl}`);
   }
 
-  if (filenameOverride) {
-    item.filename = filenameOverride;
-  }
-
-  // If the model provides a URL resolver (e.g. bunkr's sign API), call it.
-  if (gc?.resolveUrl) {
-    void appendLog("debug", `Resolving URL: ${rawUrl}`, jobId);
-    const resolved = await gc.resolveUrl(rawUrl, item.viewerUrl);
-    if (typeof resolved === "string") {
-      return resolved;
-    }
-    if (resolved.filename) {
-      item.filename = resolved.filename;
-    }
-    return resolved.url;
-  }
   return rawUrl;
 }
 
@@ -304,9 +309,9 @@ async function runQueue(
   async function runOne(): Promise<void> {
     while (cursor < entries.length) {
       const entry = entries[cursor++];
+      if (!entry) continue;
       const item = entry.item;
       const idx = entry.origIdx;
-      if (!item) continue;
 
       if (job.items?.[idx]) {
         job.items[idx].status = "running";
