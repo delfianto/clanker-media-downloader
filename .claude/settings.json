@@ -1,0 +1,48 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(bun install*)",
+      "Bash(bun pm *)",
+      "Bash(bun run *)",
+      "Bash(find . *)",
+      "Bash(git add *)",
+      "Bash(git commit*)",
+      "Bash(git diff*)",
+      "Bash(git log*)",
+      "Bash(git push*)",
+      "Bash(git show*)",
+      "Bash(git status*)",
+      "Bash(grep *)",
+      "Bash(ls *)",
+      "Bash(vp *)"
+    ],
+    "deny": []
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bun run lint"
+          },
+          {
+            "type": "command",
+            "command": "bun run check"
+          }
+        ]
+      },
+      {
+        "matcher": "Bash(git commit*)",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bun run build",
+            "statusMessage": "Building extension..."
+          }
+        ]
+      }
+    ]
+  }
+}
