@@ -59,6 +59,7 @@ const GALLERY_ADAPTERS: Record<HosterId, GalleryAdapterFn> = {
 document.addEventListener("__md_config__", (event) => {
   try {
     const config = JSON.parse((event as CustomEvent<string>).detail) as MDConfig;
+    console.log("[md] main received config event:", config);
     const model = getModel(config.hosterId);
     if (!model) return;
 

@@ -86,7 +86,7 @@ export const girlsreleasedModel: HosterModel = {
     galleryMatches: ["https://girlsreleased.com/set/*", "https://*.girlsreleased.com/set/*"],
     albumNameSelector: "h1",
     albumIdFromPath: "^/set/([^/?]+)",
-    waitForSelector: "h1",
+    waitForSelector: "a[href*='imx.to/i/']",
     imageSource: {
       strategy: "anchor-href",
       imageSelector: "#root img",

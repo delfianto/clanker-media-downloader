@@ -194,6 +194,13 @@ export function runGalleryAdapter(
   const gc = model.galleryConfig;
   if (!gc) return;
 
+  console.log(
+    "[md] runGalleryAdapter initializing for model:",
+    model.id,
+    "waitForSelector:",
+    gc.waitForSelector,
+  );
+
   if (activeInterval) {
     clearInterval(activeInterval);
     activeInterval = null;
@@ -204,6 +211,7 @@ export function runGalleryAdapter(
   document.querySelectorAll(".md-gallery-btn-wrap").forEach((el) => el.remove());
 
   function run() {
+    console.log("[md] runGalleryAdapter: run() triggered");
     const albumIdMatch = new RegExp(gc!.albumIdFromPath).exec(location.pathname);
     const albumId = albumIdMatch?.[1] ?? location.pathname.split("/").at(-1) ?? "album";
 
@@ -232,6 +240,7 @@ export function runGalleryAdapter(
       }
     }
 
+    console.log("[md] runGalleryAdapter: items collected length =", items.length);
     if (items.length === 0) return;
 
     const subfolder = buildSubfolder(albumName, config);

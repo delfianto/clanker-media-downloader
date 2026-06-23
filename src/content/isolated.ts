@@ -168,6 +168,7 @@ async function init(): Promise<void> {
 
   function checkAndTrigger() {
     const match = matchPage(location.href, location.pathname);
+    console.log("[md] isolated checkAndTrigger, url:", location.href, "match:", match);
     if (!match) return;
 
     const { model, pageType } = match;
