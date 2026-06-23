@@ -46,6 +46,7 @@ export type GalleryImageSource =
       anchorSelector: string; // CSS selector for <a> links to viewer pages
       extractor: string; // regex string sent to SW: group 1 = raw CDN URL in viewer HTML
       needsSign?: true; // bunkr only: SW must call sign API after extraction
+      filenameSelector?: string; // CSS selector (relative to the anchor) to locate the filename text
     };
 
 export type GalleryConfig = {

@@ -123,10 +123,10 @@ async function runQueue(
       }
 
       // For resolve-viewer items, derive filename from the resolved imageUrl
-      // (viewer URL slug has no extension). For resolved items, item.filename
-      // already has the correct basename.
+      // if the item's filename does not contain a file extension. For resolved items,
+      // or if item.filename already has the correct basename, keep it.
       const resolvedFilename =
-        item.kind === "resolve-viewer"
+        item.kind === "resolve-viewer" && !item.filename.includes(".")
           ? (new URL(imageUrl).pathname.split("/").at(-1) ?? item.filename)
           : item.filename;
       const filePath = job.subfolder ? `${job.subfolder}/${resolvedFilename}` : resolvedFilename;

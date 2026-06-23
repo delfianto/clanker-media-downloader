@@ -126,6 +126,12 @@ async function init(): Promise<void> {
   const override = settings.hosters[model.id];
   if (!override?.enabled) return;
 
+  if (model.id === "imagebam") {
+    if (!document.cookie.includes("nsfw_inter=1")) {
+      document.cookie = "nsfw_inter=1; path=/; max-age=21600";
+    }
+  }
+
   if (pageType === "viewer" && override.cssOverrides) injectCss(override.cssOverrides);
 
   window.addEventListener("message", onMainMessage);

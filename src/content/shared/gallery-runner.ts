@@ -59,14 +59,21 @@ function collectResolveViewer(gc: GalleryConfig): GalleryJobItem[] {
   if (src.strategy !== "resolve-viewer") return [];
   const anchors = Array.from(document.querySelectorAll<HTMLAnchorElement>(src.anchorSelector));
   return anchors
-    .map((a) => a.href)
-    .filter(Boolean)
-    .map((viewerUrl) => {
+    .filter((a) => !!a.href)
+    .map((a) => {
+      const viewerUrl = a.href;
+      let filename = viewerUrl.split("/").at(-1) ?? "file";
+      if (src.filenameSelector) {
+        const nameEl = a.querySelector(src.filenameSelector);
+        if (nameEl?.textContent) {
+          filename = nameEl.textContent.trim();
+        }
+      }
       const item: GalleryJobItem = {
         kind: "resolve-viewer",
         viewerUrl,
         extractor: src.extractor,
-        filename: viewerUrl.split("/").at(-1) ?? "file",
+        filename,
       };
       if (src.needsSign) {
         return { ...item, needsSign: true as const };
