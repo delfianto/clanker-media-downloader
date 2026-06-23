@@ -12,6 +12,29 @@ export function activate(_model: HosterModel, _config: MDConfig): void {
 }
 
 export function activateGallery(_model: HosterModel, ctx: GalleryCtx): void {
+  console.log("[md] DOM Inspection:");
+  console.log(
+    "[md] h1 elements:",
+    Array.from(document.querySelectorAll("h1")).map((el) => ({
+      text: el.textContent?.trim(),
+      html: el.outerHTML,
+    })),
+  );
+  console.log(
+    "[md] h2 elements:",
+    Array.from(document.querySelectorAll("h2")).map((el) => ({
+      text: el.textContent?.trim(),
+      html: el.outerHTML,
+    })),
+  );
+  console.log(
+    "[md] site links:",
+    Array.from(document.querySelectorAll('a[href*="/site/"]')).map((el) => ({
+      href: el.getAttribute("href"),
+      text: el.textContent?.trim(),
+    })),
+  );
+
   injectGalleryStyles();
   injectHosterStyles(
     "girlsreleased",
