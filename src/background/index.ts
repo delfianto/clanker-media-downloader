@@ -16,7 +16,7 @@ import type {
 } from "../types/messages";
 import { crossOriginFetchBlob } from "./fetcher";
 import { initDownloadUi } from "./download-ui";
-import { startGalleryJob, attemptDownload, registerJobTab } from "./gallery";
+import { startGalleryJob, attemptDownload } from "./gallery";
 import {
   listJobs,
   resumeRunningJobs,
@@ -121,7 +121,7 @@ browser.runtime.onConnect.addListener((port) => {
 });
 
 browser.runtime.onMessage.addListener(
-  (msg: unknown, sender: { tab?: { id?: number } }): Promise<AnyResponse> | undefined => {
+  (msg: unknown, _sender: { tab?: { id?: number } }): Promise<AnyResponse> | undefined => {
     const m = msg as Record<string, unknown>;
 
     if (m["type"] === "MD_FETCH_BLOB" && typeof m["url"] === "string") {
@@ -150,9 +150,6 @@ browser.runtime.onMessage.addListener(
     }
 
     if (m["type"] === "MD_GALLERY_START") {
-      if (sender.tab?.id)
-        registerJobTab((m as Record<string, unknown>)["jobId"] as string, sender.tab.id);
-
       // Do not return this Promise; returning holds the message port open until completion, causing SW starvation.
       void startGalleryJob(m as unknown as MDGalleryStartRequest).catch((err: unknown) => {
         console.error("[md] gallery job failed:", err);
@@ -196,7 +193,6 @@ browser.runtime.onMessage.addListener(
     }
 
     if (m["type"] === "MD_CRAWL_START" && typeof m["crawlId"] === "string") {
-      if (sender.tab?.id) registerJobTab(m["crawlId"], sender.tab.id);
       const req = m as unknown as MDCrawlStartRequest;
       return startCrawlJob({
         crawlId: req.crawlId,

@@ -299,11 +299,9 @@ async function init(): Promise<void> {
       const itemsContainer = card.querySelector<HTMLElement>(".job-items");
 
       // Per-item patch — update one row instead of rebuilding all 50.
-      // This is the hot path during a crawl: 10,100 single-row patches vs.
-      // 10,100 full-container rebuilds.
       if (itemsContainer && prog.itemDelta) {
         const delta = prog.itemDelta;
-        const row = itemsContainer.children[delta.idx];
+        const row = itemsContainer.querySelector(`[data-idx="${delta.idx}"]`) as HTMLElement;
         if (row) {
           const statusEl = row.querySelector<HTMLElement>(".item-status");
           if (statusEl) {
@@ -334,13 +332,41 @@ async function init(): Promise<void> {
           } else if (existingError) {
             existingError.remove();
           }
+
+          // Move the row to the 'done-section' if its status changed to done
+          if (delta.status === "done" && row.parentElement?.classList.contains("errors-section")) {
+            let doneContainer = itemsContainer.querySelector(".done-section");
+            if (!doneContainer) {
+              const header = el("div", {
+                className: "job-items-header done-header",
+                textContent: "Completed",
+              });
+              doneContainer = el("div", { className: "job-items-section done-section" });
+              itemsContainer.append(header, doneContainer);
+            }
+            doneContainer.append(row);
+
+            const errContainer = itemsContainer.querySelector(".errors-section");
+            if (errContainer && errContainer.children.length === 0) {
+              const errHeader = itemsContainer.querySelector(".errors-header");
+              errHeader?.remove();
+              errContainer.remove();
+            }
+          }
         }
       }
 
       // Full items rebuild — only on job start (initial render).
       if (itemsContainer && prog.items) {
         itemsContainer.replaceChildren();
-        for (const item of prog.items) {
+        if (prog.items.length === 0) return;
+
+        const errorsContainer = el("div", { className: "job-items-section errors-section" });
+        const doneContainer = el("div", { className: "job-items-section done-section" });
+
+        for (let idx = 0; idx < prog.items.length; idx++) {
+          const item = prog.items[idx];
+          if (!item) continue;
           const statusIcon =
             item.status === "done"
               ? "✓"
@@ -364,16 +390,36 @@ async function init(): Promise<void> {
                 textContent: item.filename,
                 title: item.displayName,
               });
-          const itemEl = el("div", { className: "job-item" }, [
+          const itemEl = el("div", { className: `job-item ${item.status}` }, [
             el("span", { className: itemStatusClass, textContent: statusIcon }),
             filenameEl,
           ]);
+          itemEl.dataset.idx = String(idx);
           if (item.error) {
             itemEl.append(
               el("span", { className: "item-error", textContent: ` (Error: ${item.error})` }),
             );
           }
-          itemsContainer.append(itemEl);
+          if (item.status === "done") {
+            doneContainer.append(itemEl);
+          } else {
+            errorsContainer.append(itemEl);
+          }
+        }
+
+        if (errorsContainer.children.length > 0) {
+          const header = el("div", {
+            className: "job-items-header errors-header",
+            textContent: "Pending & Errors",
+          });
+          itemsContainer.append(header, errorsContainer);
+        }
+        if (doneContainer.children.length > 0) {
+          const header = el("div", {
+            className: "job-items-header done-header",
+            textContent: "Completed",
+          });
+          itemsContainer.append(header, doneContainer);
         }
       }
     }

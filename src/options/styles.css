@@ -797,10 +797,26 @@ progress::-moz-progress-bar {
   border-top: 1px solid var(--border);
   padding-top: 12px;
   flex-direction: column;
-  gap: 6px;
+  gap: 12px;
   max-height: 250px;
   overflow-y: auto;
   padding-right: 4px;
+}
+
+.job-items-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.job-items-header {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-dim);
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--border);
 }
 
 .job-card.expanded .job-items {

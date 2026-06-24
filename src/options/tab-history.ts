@@ -8,14 +8,39 @@ import { $, el } from "./dom";
 // expanded and items are fetched via MD_GET_JOB).
 function renderItemsInto(container: HTMLElement, job: DownloadJob): void {
   container.replaceChildren();
-  if (!job.items) return;
-  for (const item of job.items) {
-    const itemEl = makeItemEl(item);
-    container.append(itemEl);
+  if (!job.items || job.items.length === 0) return;
+
+  const errorsContainer = el("div", { className: "job-items-section errors-section" });
+  const doneContainer = el("div", { className: "job-items-section done-section" });
+
+  for (let idx = 0; idx < job.items.length; idx++) {
+    const item = job.items[idx];
+    if (!item) continue;
+    const itemEl = makeItemEl(item, idx);
+    if (item.status === "done") {
+      doneContainer.append(itemEl);
+    } else {
+      errorsContainer.append(itemEl);
+    }
+  }
+
+  if (errorsContainer.children.length > 0) {
+    const header = el("div", {
+      className: "job-items-header errors-header",
+      textContent: "Pending & Errors",
+    });
+    container.append(header, errorsContainer);
+  }
+  if (doneContainer.children.length > 0) {
+    const header = el("div", {
+      className: "job-items-header done-header",
+      textContent: "Completed",
+    });
+    container.append(header, doneContainer);
   }
 }
 
-function makeItemEl(item: DownloadJobItem): HTMLElement {
+function makeItemEl(item: DownloadJobItem, idx: number): HTMLElement {
   const statusIcon =
     item.status === "done"
       ? "✓"
@@ -39,10 +64,11 @@ function makeItemEl(item: DownloadJobItem): HTMLElement {
         textContent: item.filename,
         title: item.displayName,
       });
-  const itemEl = el("div", { className: "job-item" }, [
+  const itemEl = el("div", { className: `job-item ${item.status}` }, [
     el("span", { className: itemStatusClass, textContent: statusIcon }),
     filenameEl,
   ]);
+  itemEl.dataset.idx = String(idx);
   if (item.error) {
     itemEl.append(el("span", { className: "item-error", textContent: ` (Error: ${item.error})` }));
   }

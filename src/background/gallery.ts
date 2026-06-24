@@ -5,7 +5,7 @@ import type {
   MDJobProgressMessage,
 } from "../types/messages";
 import type { DownloadJob, DownloadJobItem } from "../types/jobs";
-import { trackDownload } from "./download-tracker";
+import { trackDownload, preRegisterFilename, unregisterFilename } from "./download-tracker";
 import {
   upsertJob,
   upsertJobItem,
@@ -38,18 +38,6 @@ function nextStartedAt(): number {
   const now = Date.now();
   lastStartedAt = now > lastStartedAt ? now : lastStartedAt + 1;
   return lastStartedAt;
-}
-
-// ── Targeted tab broadcast ───────────────────────────────────────────────────
-// Tracks originating tabs to send terminal progress updates efficiently.
-const jobTabIds = new Map<string, number>();
-
-export function registerJobTab(jobId: string, tabId: number): void {
-  jobTabIds.set(jobId, tabId);
-}
-
-export function unregisterJobTab(jobId: string): void {
-  jobTabIds.delete(jobId);
 }
 
 // ── Progress broadcast ───────────────────────────────────────────────────────
@@ -109,11 +97,9 @@ function broadcastItemUpdate(job: DownloadJob, idx: number): void {
 }
 
 async function broadcastProgressToTabs(job: DownloadJob): Promise<void> {
-  // Send only terminal-state messages to the originating tab to avoid broadcast storms.
+  // Send only terminal-state messages to all tabs to ensure the originating
+  // tab receives it even if the Service Worker restarted and lost memory state.
   if (job.status === "running") return;
-
-  const tabId = jobTabIds.get(job.jobId);
-  if (tabId === undefined) return;
 
   const msg = {
     type: "MD_JOB_PROGRESS" as const,
@@ -122,13 +108,17 @@ async function broadcastProgressToTabs(job: DownloadJob): Promise<void> {
     totalCount: job.totalCount,
     status: job.status,
   };
+
   try {
-    await browser.tabs.sendMessage(tabId, msg).catch(() => {
-      // Tab may have closed — stop tracking it.
-      jobTabIds.delete(job.jobId);
-    });
+    const tabs = await browser.tabs.query({});
+    for (const tab of tabs) {
+      if (tab.id) {
+        // Ignore errors for tabs without the content script injected
+        void browser.tabs.sendMessage(tab.id, msg).catch(() => {});
+      }
+    }
   } catch {
-    jobTabIds.delete(job.jobId);
+    // Ignore permissions errors
   }
 }
 
@@ -235,18 +225,28 @@ export async function attemptDownload(
   );
   if (orphaned) {
     void appendLog("debug", `Adopting orphaned native download for ${filePath}`, jobId || "");
-    await trackDownload(orphaned.id, jobId || "", filePath);
+    await trackDownload(orphaned.id, jobId || "", filePath, orphaned.url);
     return;
   }
 
   await precheckDownloadUrl(url);
 
-  const downloadId = await browser.downloads.download({
-    url,
-    filename: filePath,
-    conflictAction: "uniquify",
-  });
-  await trackDownload(downloadId, jobId || "", filePath);
+  // Pre-register the URL -> filename mapping before creating the download.
+  // This fixes the Chrome MV3 race condition where onDeterminingFilename fires
+  // *before* downloads.download resolves with its downloadId.
+  preRegisterFilename(url, filePath);
+
+  try {
+    const downloadId = await browser.downloads.download({
+      url,
+      filename: filePath,
+      conflictAction: "uniquify",
+    });
+    await trackDownload(downloadId, jobId || "", filePath, url);
+  } catch (err) {
+    unregisterFilename(url, filePath);
+    throw err;
+  }
 }
 
 // Pair each item with its original index into job.items so we can partition
@@ -587,7 +587,6 @@ export async function startGalleryJob(req: MDGalleryStartRequest): Promise<void>
       console.error(`[md] Error running queued job ${job.jobId}:`, err);
     })
     .finally(() => {
-      unregisterJobTab(job.jobId);
       jobActivityEnd();
     });
 
@@ -648,7 +647,6 @@ export async function updateCrawlProgress(req: {
 export async function finishCrawlJob(req: { crawlId: string; aborted: boolean }): Promise<void> {
   const job = await getJob(req.crawlId);
   if (!job) {
-    unregisterJobTab(req.crawlId);
     return; // already cleared
   }
   if (req.aborted) {
@@ -657,14 +655,12 @@ export async function finishCrawlJob(req: { crawlId: string; aborted: boolean })
       await upsertJob(job);
       broadcastProgress(job);
     }
-    unregisterJobTab(req.crawlId);
     void appendLog("warn", "Crawl aborted by user — no downloads started", req.crawlId);
     return;
   }
   job.status = job.failedCount > 0 ? "error" : "done";
   await upsertJob(job);
   broadcastProgress(job);
-  unregisterJobTab(req.crawlId);
   void appendLog(
     "info",
     `Crawl complete: ${job.completedCount - job.failedCount} sets resolved, ${job.failedCount} failed — posting download jobs`,
