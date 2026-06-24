@@ -165,3 +165,22 @@ export function deriveGalleryName(
 
   return studio ? `${studio}/${segment}` : segment;
 }
+
+export function compareSetsByDateAndSubfolder(
+  a: { postedAt?: number | null; subfolder: string },
+  b: { postedAt?: number | null; subfolder: string },
+): number {
+  const getPostedDateString = (postedAt?: number | null): string => {
+    if (!postedAt) return "";
+    const d = new Date(postedAt * 1000);
+    const p = (n: number) => String(n).padStart(2, "0");
+    return `${d.getUTCFullYear()}.${p(d.getUTCMonth() + 1)}.${p(d.getUTCDate())}`;
+  };
+
+  const dateA = getPostedDateString(a.postedAt);
+  const dateB = getPostedDateString(b.postedAt);
+  if (dateA !== dateB) {
+    return dateB.localeCompare(dateA); // descending
+  }
+  return a.subfolder.localeCompare(b.subfolder); // alphabetical ascending
+}

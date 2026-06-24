@@ -1,5 +1,9 @@
 import { describe, it, expect } from "bun:test";
-import { parseSet, deriveGalleryName } from "../src/hosts/girlsreleased/api";
+import {
+  parseSet,
+  deriveGalleryName,
+  compareSetsByDateAndSubfolder,
+} from "../src/hosts/girlsreleased/api";
 import type { MDGalleryStartRequest } from "../src/types/messages";
 import sexartSets from "./girlsreleased-sexart-sets.json";
 
@@ -57,20 +61,12 @@ describe("GirlsReleased Sets Sorting", () => {
       })
       .filter((r): r is { req: MDGalleryStartRequest; postedAt: number } => r !== null);
 
-    // 2. Sort the mock jobs list using our updated sorting function
-    const getPostedDateString = (postedAt: number): string => {
-      const d = new Date(postedAt * 1000);
-      const p = (n: number) => String(n).padStart(2, "0");
-      return `${d.getUTCFullYear()}.${p(d.getUTCMonth() + 1)}.${p(d.getUTCDate())}`;
-    };
-
+    // 2. Sort the mock jobs list using the shared sorting function
     mockSetResults.sort((a, b) => {
-      const dateA = getPostedDateString(a.postedAt);
-      const dateB = getPostedDateString(b.postedAt);
-      if (dateA !== dateB) {
-        return dateB.localeCompare(dateA);
-      }
-      return a.req.subfolder.localeCompare(b.req.subfolder);
+      return compareSetsByDateAndSubfolder(
+        { postedAt: a.postedAt, subfolder: a.req.subfolder },
+        { postedAt: b.postedAt, subfolder: b.req.subfolder },
+      );
     });
 
     // 3. Verify the sorted order.

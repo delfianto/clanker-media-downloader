@@ -3,7 +3,11 @@ import type { GalleryConfig, HosterModel } from "../../types/hoster";
 import type { GalleryJobItem, MDGalleryStartRequest } from "../../types/messages";
 import type { GalleryCtx } from "./gallery-ui";
 import { thumbnailToFull } from "../../resolvers/index";
-import { parseSet, deriveGalleryName } from "../../hosts/girlsreleased/api";
+import {
+  parseSet,
+  deriveGalleryName,
+  compareSetsByDateAndSubfolder,
+} from "../../hosts/girlsreleased/api";
 
 import { sanitizeFilename } from "../../background/sanitize";
 
@@ -353,18 +357,11 @@ export function runGalleryAdapter(
         const validResults = setResults.filter(
           (r): r is { req: MDGalleryStartRequest; postedAt: number } => r !== null,
         );
-        const getPostedDateString = (postedAt: number): string => {
-          const d = new Date(postedAt * 1000);
-          const p = (n: number) => String(n).padStart(2, "0");
-          return `${d.getUTCFullYear()}.${p(d.getUTCMonth() + 1)}.${p(d.getUTCDate())}`;
-        };
         validResults.sort((a, b) => {
-          const dateA = getPostedDateString(a.postedAt);
-          const dateB = getPostedDateString(b.postedAt);
-          if (dateA !== dateB) {
-            return dateB.localeCompare(dateA);
-          }
-          return a.req.subfolder.localeCompare(b.req.subfolder);
+          return compareSetsByDateAndSubfolder(
+            { postedAt: a.postedAt, subfolder: a.req.subfolder },
+            { postedAt: b.postedAt, subfolder: b.req.subfolder },
+          );
         });
 
         // Post messages sequentially
