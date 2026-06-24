@@ -217,6 +217,9 @@ export function renderJobCard(
   return card;
 }
 
+let currentPage = 1;
+const PAGE_SIZE = 50;
+
 export async function loadHistoryTab(expandedJobIds: Set<string>): Promise<void> {
   const jobsContainer = $("dl-jobs");
   if (jobsContainer.children.length === 0) {
@@ -230,8 +233,16 @@ export async function loadHistoryTab(expandedJobIds: Set<string>): Promise<void>
       jobsContainer.replaceChildren(
         el("p", { className: "default-note", textContent: "No downloads yet." }),
       );
+      $("history-pagination").replaceChildren();
       return;
     }
+
+    const totalPages = Math.ceil(res.jobs.length / PAGE_SIZE);
+    if (currentPage > totalPages) currentPage = Math.max(1, totalPages);
+
+    const startIndex = (currentPage - 1) * PAGE_SIZE;
+    const endIndex = startIndex + PAGE_SIZE;
+    const pagedJobs = res.jobs.slice(startIndex, endIndex);
 
     // Map existing job cards so we can preserve their inner state (like scroll position)
     const existingCards = new Map<string, HTMLElement>();
@@ -242,7 +253,7 @@ export async function loadHistoryTab(expandedJobIds: Set<string>): Promise<void>
     }
 
     const newChildren: HTMLElement[] = [];
-    for (const job of res.jobs) {
+    for (const job of pagedJobs) {
       const newCard = renderJobCard(job, expandedJobIds, () => void loadHistoryTab(expandedJobIds));
       const existingCard = existingCards.get(newCard.id);
 
@@ -258,9 +269,57 @@ export async function loadHistoryTab(expandedJobIds: Set<string>): Promise<void>
     }
 
     jobsContainer.replaceChildren(...newChildren);
+
+    // Render pagination controls
+    renderPagination(totalPages, expandedJobIds);
   } catch {
     jobsContainer.replaceChildren(
       el("p", { className: "default-note", textContent: "Could not load jobs." }),
     );
+    $("history-pagination").replaceChildren();
   }
+}
+
+function renderPagination(totalPages: number, expandedJobIds: Set<string>): void {
+  const container = $("history-pagination");
+  container.replaceChildren();
+
+  if (totalPages <= 1) return;
+
+  const prevBtn = el("button", {
+    className: "reset-btn",
+    textContent: "Previous",
+  });
+  if (currentPage === 1) prevBtn.setAttribute("disabled", "true");
+  prevBtn.addEventListener("click", () => {
+    if (currentPage > 1) {
+      currentPage--;
+      expandedJobIds.clear(); // Reset expanded state on page turn
+      void loadHistoryTab(expandedJobIds);
+      // scroll to top of job list
+      $("dl-view-history").scrollTo(0, 0);
+    }
+  });
+
+  const pageLabel = el("span", {
+    textContent: `Page ${currentPage} of ${totalPages}`,
+  });
+  pageLabel.style.alignSelf = "center";
+  pageLabel.style.fontSize = "13px";
+
+  const nextBtn = el("button", {
+    className: "reset-btn",
+    textContent: "Next",
+  });
+  if (currentPage === totalPages) nextBtn.setAttribute("disabled", "true");
+  nextBtn.addEventListener("click", () => {
+    if (currentPage < totalPages) {
+      currentPage++;
+      expandedJobIds.clear();
+      void loadHistoryTab(expandedJobIds);
+      $("dl-view-history").scrollTo(0, 0);
+    }
+  });
+
+  container.append(prevBtn, pageLabel, nextBtn);
 }

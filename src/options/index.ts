@@ -174,10 +174,7 @@ async function init(): Promise<void> {
     // it back — that's how a cleared list "suddenly got populated back".
     void browser.runtime.sendMessage({ type: "MD_CLEAR_JOBS" }).then(() => {
       expandedJobIds.clear();
-      $("history-count").textContent = "0 jobs";
-      $("dl-jobs").replaceChildren(
-        el("p", { className: "default-note", textContent: "No downloads yet." }),
-      );
+      void loadHistoryTab(expandedJobIds);
     });
   });
 
