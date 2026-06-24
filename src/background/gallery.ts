@@ -372,7 +372,17 @@ async function runQueue(
   }
 
   const slots = Math.min(entries.length, maxParallel);
-  if (slots > 0) await Promise.all(Array.from({ length: slots }, runOne));
+  if (slots > 0) {
+    await Promise.all(
+      Array.from({ length: slots }, async (_, i) => {
+        // Stagger worker startup by 50ms each to avoid Chrome's internal race
+        // condition on Linux where concurrent downloads to a new directory
+        // cause mkdir collisions, leading Chrome to dump files in ~/Downloads.
+        if (i > 0) await sleep(i * 50);
+        return runOne();
+      }),
+    );
+  }
 }
 
 // ── Public API ───────────────────────────────────────────────────────────────
