@@ -16,7 +16,15 @@ export async function resolveLeaf(viewerUrl: string): Promise<{ url: string; fil
   const secureUrl = viewerUrl.replace(/^http:\/\//i, "https://");
   const u = new URL(secureUrl);
   const r = LEAF_RESOLVERS.find((r) => r.matches(u));
-  if (!r) throw new Error(`no leaf resolver for host: ${u.hostname}`);
+  if (!r) {
+    // If a job was saved with a direct image URL under kind: "resolve-viewer"
+    // (e.g. before a resolver matches() fix), or a hoster returned a direct
+    // link, gracefully return it instead of throwing UNSUPPORTED_HOST.
+    if (/\.(?:jpg|jpeg|png|gif|webp|mp4|webm)(\?|$)/i.test(u.pathname)) {
+      return { url: secureUrl };
+    }
+    throw new Error(`no leaf resolver for host: ${u.hostname}`);
+  }
   return r.resolveFromViewer(secureUrl);
 }
 
