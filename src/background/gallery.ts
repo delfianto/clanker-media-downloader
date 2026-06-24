@@ -24,7 +24,13 @@ import { sanitizeFilename } from "./sanitize";
 import { DEFAULT_SETTINGS } from "../settings/schema";
 import { getModel } from "../hosts/index";
 
-let activeJobPromise: Promise<void> = Promise.resolve();
+// Maintain a single sequential queue for all download jobs. They will be
+// processed strictly in the order they are started.
+let activeJobPromise = Promise.resolve();
+
+// Maintain a single sequential queue for job setups to prevent massive
+// concurrent IDB transactions when a crawl fires 50+ jobs simultaneously.
+let setupPromiseQueue = Promise.resolve();
 
 // Strictly-increasing creation timestamp. A crawl posts its sets as a burst, so
 // many jobs land in the same millisecond; listJobs sorts by startedAt and would
@@ -404,67 +410,72 @@ export async function startGalleryJob(req: MDGalleryStartRequest): Promise<void>
     items: [],
   };
 
-  // Eagerly run setup — dedup against IDB, persist the job + its items, broadcast
-  // the initial state, and read settings. Kicked off immediately (NOT chained) so
-  // the job shows up in the History list right away and in arrival order. The
-  // download phase below awaits this before it runs.
-  const setup = (async () => {
-    // Dedup: for each item, check if a done item with the same [subfolder+
-    // displayName] already exists in IDB. Composite index — O(1) per item.
-    for (let i = 0; i < req.items.length; i++) {
-      const item = req.items[i];
-      if (!item) continue;
-      const displayName = item.kind === "resolve-viewer" ? item.viewerUrl : item.imageUrl;
-      const sourceUrl =
-        item.kind === "resolve-viewer" ? item.viewerUrl : (item.sourceUrl ?? item.imageUrl);
+  // Eagerly run setup but QUEUE it sequentially! When a crawl fires 50 jobs
+  // at once, doing 5000 IDB transactions concurrently crashes the Service Worker
+  // due to OOM. By chaining setup operations sequentially, we serialize IDB access.
+  const setup = new Promise<any>((resolve) => {
+    setupPromiseQueue = setupPromiseQueue
+      .then(async () => {
+        // Dedup: for each item, check if a done item with the same [subfolder+
+        // displayName] already exists in IDB. Composite index — O(1) per item.
+        for (let i = 0; i < req.items.length; i++) {
+          const item = req.items[i];
+          if (!item) continue;
+          const displayName = item.kind === "resolve-viewer" ? item.viewerUrl : item.imageUrl;
+          const sourceUrl =
+            item.kind === "resolve-viewer" ? item.viewerUrl : (item.sourceUrl ?? item.imageUrl);
 
-      const existing = await findDoneItem(req.subfolder, displayName);
-      const result: DownloadJobItem = {
-        displayName,
-        filename: existing ? existing.filename : item.filename,
-        status: existing ? ("done" as const) : ("pending" as const),
-      };
-      if (sourceUrl) result.sourceUrl = sourceUrl;
-      if (job.items) {
-        job.items[i] = result;
-      } else {
-        job.items = [result];
-      }
-    }
+          const existing = await findDoneItem(req.subfolder, displayName);
+          const result: DownloadJobItem = {
+            displayName,
+            filename: existing ? existing.filename : item.filename,
+            status: existing ? ("done" as const) : ("pending" as const),
+          };
+          if (sourceUrl) result.sourceUrl = sourceUrl;
+          if (job.items) {
+            job.items[i] = result;
+          } else {
+            job.items = [result];
+          }
+        }
 
-    job.completedCount = job.items?.filter((item) => item.status === "done").length ?? 0;
+        job.completedCount = job.items?.filter((item) => item.status === "done").length ?? 0;
 
-    await upsertJob(job);
-    await insertJobItems(job);
-    broadcastJobStart(job);
+        await upsertJob(job);
+        await insertJobItems(job);
+        broadcastJobStart(job);
 
-    // Partition items by media type so videos (large, CDN-throttled) get their
-    // own lower-parallelism queue while images stay aggressive.
-    const entries = req.items.map((item, i) => ({ item, origIdx: i }));
-    const mediaEntries = entries.filter((e) => isMediaFile(e.item.filename));
-    const imageEntries = entries.filter((e) => !isMediaFile(e.item.filename));
+        // Partition items by media type so videos (large, CDN-throttled) get their
+        // own lower-parallelism queue while images stay aggressive.
+        const entries = req.items.map((item, i) => ({ item, origIdx: i }));
+        const mediaEntries = entries.filter((e) => isMediaFile(e.item.filename));
+        const imageEntries = entries.filter((e) => !isMediaFile(e.item.filename));
 
-    void appendLog(
-      "info",
-      `Gallery job started [${req.hosterId}]: ${req.items.length} items (${imageEntries.length} img, ${mediaEntries.length} media) → "${req.subfolder || "(no folder)"}", parallel=${req.maxParallelImg}/${req.maxParallelVid}`,
-      job.jobId,
-    );
+        void appendLog(
+          "info",
+          `Gallery job started [${req.hosterId}]: ${req.items.length} items (${imageEntries.length} img, ${mediaEntries.length} media) → "${req.subfolder || "(no folder)"}", parallel=${req.maxParallelImg}/${req.maxParallelVid}`,
+          job.jobId,
+        );
 
-    const stored = await browser.storage.local.get({
-      maxDownloadRetries: DEFAULT_SETTINGS.maxDownloadRetries,
-      skipExistingFiles: DEFAULT_SETTINGS.skipExistingFiles,
-    });
-    const maxRetries =
-      typeof stored["maxDownloadRetries"] === "number"
-        ? stored["maxDownloadRetries"]
-        : DEFAULT_SETTINGS.maxDownloadRetries;
-    const skipExisting =
-      typeof stored["skipExistingFiles"] === "boolean"
-        ? stored["skipExistingFiles"]
-        : DEFAULT_SETTINGS.skipExistingFiles;
+        const stored = await browser.storage.local.get({
+          maxDownloadRetries: DEFAULT_SETTINGS.maxDownloadRetries,
+          skipExistingFiles: DEFAULT_SETTINGS.skipExistingFiles,
+        });
+        const maxRetries =
+          typeof stored["maxDownloadRetries"] === "number"
+            ? stored["maxDownloadRetries"]
+            : DEFAULT_SETTINGS.maxDownloadRetries;
+        const skipExisting =
+          typeof stored["skipExistingFiles"] === "boolean"
+            ? stored["skipExistingFiles"]
+            : DEFAULT_SETTINGS.skipExistingFiles;
 
-    return { imageEntries, mediaEntries, maxRetries, skipExisting };
-  })();
+        resolve({ imageEntries, mediaEntries, maxRetries, skipExisting });
+      })
+      .catch((err) => {
+        void appendLog("error", `Job setup crashed: ${String(err)}`, job.jobId);
+      });
+  });
 
   // Mark download activity active: suppresses Chrome's native download UI and
   // bumps the toolbar badge. Paired with jobActivityEnd() in the .finally below.
