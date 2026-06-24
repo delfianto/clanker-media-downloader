@@ -253,7 +253,7 @@ export function runGalleryAdapter(
     async function triggerDownload(
       btnElement: HTMLElement,
       loadingIcon: string,
-      _doneIcon: string,
+      doneIcon: string,
     ): Promise<string> {
       btnElement.classList.add("loading");
 
@@ -281,9 +281,9 @@ export function runGalleryAdapter(
       );
       if (hasSets) {
         btnElement.innerHTML = loadingIcon;
-        const expandedItems: GalleryJobItem[] = [];
+        let lastJobId = "";
 
-        // Fetch all set pages' API data in parallel
+        // Fetch and start each set job individually
         await Promise.all(
           jobItems.map(async (item) => {
             if (item.kind === "resolve-viewer" && item.viewerUrl.includes("/set/")) {
@@ -307,17 +307,18 @@ export function runGalleryAdapter(
                 );
                 const setSubfolder = detectedSetName ? buildSubfolder(detectedSetName, config) : "";
 
+                const setItems: GalleryJobItem[] = [];
                 for (const file of parsed.files) {
                   const fullUrl = thumbnailToFull(file.thumbnailUrl);
                   if (fullUrl) {
-                    expandedItems.push({
+                    setItems.push({
                       kind: "resolved",
                       imageUrl: fullUrl,
                       filename: file.filename,
                       subfolder: setSubfolder,
                     });
                   } else {
-                    expandedItems.push({
+                    setItems.push({
                       kind: "resolve-viewer",
                       viewerUrl: file.viewerUrl,
                       filename: file.filename,
@@ -325,16 +326,30 @@ export function runGalleryAdapter(
                     });
                   }
                 }
+
+                if (setItems.length > 0) {
+                  const setJobId = crypto.randomUUID();
+                  lastJobId = setJobId;
+                  const req: MDGalleryStartRequest = {
+                    type: "MD_GALLERY_START",
+                    jobId: setJobId,
+                    hosterId: model.id,
+                    subfolder: setSubfolder,
+                    items: setItems,
+                    maxParallelImg: config.maxParallelImg,
+                    maxParallelVid: config.maxParallelVid,
+                  };
+                  window.postMessage(req, "*");
+                }
               } catch (err) {
                 console.error(`[md] failed to crawl set ${item.viewerUrl}:`, err);
               }
-            } else {
-              expandedItems.push(item);
             }
           }),
         );
-        jobItems = expandedItems;
-        console.log(`[md] set expansion complete: ${expandedItems.length} items`);
+
+        btnElement.innerHTML = doneIcon;
+        return lastJobId;
       }
 
       btnElement.innerHTML = loadingIcon;

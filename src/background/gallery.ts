@@ -64,6 +64,10 @@ async function upsertJob(job: DownloadJob): Promise<void> {
   const jobs = await readJobs();
   const idx = jobs.findIndex((j) => j.jobId === job.jobId);
   if (idx >= 0) {
+    const existing = jobs[idx];
+    if (existing && existing.status === "canceled") {
+      job.status = "canceled";
+    }
     jobs[idx] = job;
   } else {
     jobs.unshift(job); // newest first
