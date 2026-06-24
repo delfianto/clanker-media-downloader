@@ -83,6 +83,16 @@ export function renderDownloadsSettings(
     persist();
   });
 
+  // Skip existing files toggle
+  const skipExistingToggle = el("input", {
+    type: "checkbox",
+    checked: settings.skipExistingFiles,
+  });
+  skipExistingToggle.addEventListener("change", () => {
+    settings.skipExistingFiles = skipExistingToggle.checked;
+    persist();
+  });
+
   const resetBtn = el("button", {
     className: "reset-btn",
     textContent: "↺ Reset Settings",
@@ -97,6 +107,7 @@ export function renderDownloadsSettings(
     settings.downloadDirectory = DEFAULT_SETTINGS.downloadDirectory;
     settings.autoFolderPerAlbum = DEFAULT_SETTINGS.autoFolderPerAlbum;
     settings.verboseLogging = DEFAULT_SETTINGS.verboseLogging;
+    settings.skipExistingFiles = DEFAULT_SETTINGS.skipExistingFiles;
     persist();
     renderDownloadsSettings(settings, persist, persistSoon);
     toast("Settings reset to defaults");
@@ -165,6 +176,22 @@ export function renderDownloadsSettings(
       ]),
       el("label", { className: "hoster-toggle" }, [
         el("span", { className: "switch" }, [verboseToggle, el("span", { className: "slider" })]),
+      ]),
+    ]),
+    el("div", { className: "settings-field" }, [
+      el("div", {}, [
+        el("div", { className: "settings-label", textContent: "Skip already downloaded files" }),
+        el("div", {
+          className: "settings-hint",
+          textContent:
+            "Skip files that already exist in download history (same folder + name) — O(1) IDB lookup, persists across restarts",
+        }),
+      ]),
+      el("label", { className: "hoster-toggle" }, [
+        el("span", { className: "switch" }, [
+          skipExistingToggle,
+          el("span", { className: "slider" }),
+        ]),
       ]),
     ]),
     resetBtn,

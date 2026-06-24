@@ -21,4 +21,5 @@ export const DEFAULT_SETTINGS: Settings = {
   autoFolderPerAlbum: true,
   verboseLogging: true,
   maxDownloadRetries: 5,
+  skipExistingFiles: true,
 };

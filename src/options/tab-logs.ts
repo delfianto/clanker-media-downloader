@@ -1,5 +1,6 @@
 import browser from "webextension-polyfill";
 import type { DownloadLog } from "../types/jobs";
+import type { MDGetLogsResponse } from "../types/messages";
 import { $, el } from "./dom";
 
 export function formatTs(ms: number): string {
@@ -33,8 +34,8 @@ export async function loadLogsTab(): Promise<void> {
     container.replaceChildren(el("p", { className: "default-note", textContent: "Loading…" }));
   }
   try {
-    const raw = await browser.storage.local.get({ downloadLogs: [] });
-    const logs = (raw["downloadLogs"] as DownloadLog[] | undefined) ?? [];
+    const res = (await browser.runtime.sendMessage({ type: "MD_GET_LOGS" })) as MDGetLogsResponse;
+    const logs = res.logs ?? [];
     $("log-count").textContent = `${logs.length} entries`;
     container.replaceChildren();
     if (logs.length === 0) {

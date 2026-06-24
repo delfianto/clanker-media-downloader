@@ -81,6 +81,10 @@ export type MDGalleryStartRequest = {
 };
 
 // SW → options page (via chrome.runtime.sendMessage — bypasses MAIN/ISOLATED relay).
+// Per-item updates send itemDelta (the one changed item) instead of the full
+// items array — avoids serializing/rebuilding 50 DOM nodes on every status change.
+// The items array is still sent on job start (initial render) and is available
+// via MD_LIST_JOBS for the 3s polling fallback.
 export type MDJobProgressMessage = {
   type: "MD_JOB_PROGRESS";
   jobId: string;
@@ -88,7 +92,18 @@ export type MDJobProgressMessage = {
   totalCount: number;
   failedCount: number;
   status: "running" | "done" | "error" | "canceled";
+  // Full item list — sent only on job start (initial render). Omitted on
+  // per-item updates in favor of itemDelta.
   items?: DownloadJobItem[];
+  // The one item that changed — sent on per-item status updates so the
+  // options page can patch a single DOM row instead of rebuilding all.
+  itemDelta?: {
+    idx: number;
+    status: "pending" | "running" | "done" | "error";
+    filename: string;
+    error?: string;
+    sourceUrl?: string;
+  };
 };
 
 // Options page → SW: request the current job list for the Downloads tab.
@@ -160,6 +175,14 @@ export type MDCrawlDoneRequest = {
 
 // SW → options page: a single log entry to append live in the Logs tab.
 export type MDLogMessage = { type: "MD_LOG"; entry: DownloadLog };
+
+// Options page → SW: fetch all logs (for Logs tab + Copy button). Reads from
+// IDB, flushing buffered debug entries first.
+export type MDGetLogsRequest = { type: "MD_GET_LOGS" };
+export type MDGetLogsResponse = { logs: DownloadLog[] };
+
+// Options page → SW: clear all logs from IDB.
+export type MDClearLogsRequest = { type: "MD_CLEAR_LOGS" };
 
 // ── Offscreen download messages ──────────────────────────────────────────────
 export type MDOffscreenDownloadRequest = {

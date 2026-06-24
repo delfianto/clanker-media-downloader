@@ -35,7 +35,7 @@ function makeManifest(target: Browser): Record<string, unknown> {
     description:
       "One-click image downloads from image hosting sites. Clean, private, no external server.",
     icons: { "48": "icons/icon-48.png", "96": "icons/icon-96.png" },
-    permissions: ["storage", "downloads", "declarativeNetRequest", "offscreen"],
+    permissions: ["storage", "downloads", "declarativeNetRequest", "offscreen", "unlimitedStorage"],
     host_permissions: HOST_PERMISSIONS,
     background: { service_worker: "src/background/index.ts", type: "module" },
     action: {

@@ -6,7 +6,13 @@ import type {
 } from "../types/messages";
 import type { DownloadJob, DownloadJobItem } from "../types/jobs";
 import { trackDownload } from "./download-tracker";
-import { upsertJob, readJobs, setJobUpdatedListener } from "./job-store";
+import {
+  upsertJob,
+  getJob,
+  setJobUpdatedListener,
+  isJobCancelled,
+  findDoneItem,
+} from "./job-store";
 import { resolveItem } from "./item-resolver";
 import { appendLog } from "./logger";
 import { isMediaFile, isTransientError } from "./media-util";
@@ -16,9 +22,41 @@ import { getModel } from "../hosts/index";
 
 let activeJobPromise: Promise<void> = Promise.resolve();
 
+// ── Targeted tab broadcast ───────────────────────────────────────────────────
+// Tracks which content-script tab originated each job/crawl, so progress can be
+// sent to that one tab only — not every open tab via tabs.query({}). Content
+// tabs need MD_JOB_PROGRESS only for terminal states (crawl cancel + button
+// reset); running updates are options-page only (via runtime.sendMessage).
+const jobTabIds = new Map<string, number>();
+
+export function registerJobTab(jobId: string, tabId: number): void {
+  jobTabIds.set(jobId, tabId);
+}
+
+export function unregisterJobTab(jobId: string): void {
+  jobTabIds.delete(jobId);
+}
+
 // ── Progress broadcast ───────────────────────────────────────────────────────
 
+// Counts-only broadcast — used by setJobUpdatedListener and job completion.
+// Does NOT include the items array (avoids serializing 50 items per message).
 function broadcastProgress(job: DownloadJob): void {
+  const msg: MDJobProgressMessage = {
+    type: "MD_JOB_PROGRESS",
+    jobId: job.jobId,
+    completedCount: job.completedCount,
+    totalCount: job.totalCount,
+    failedCount: job.failedCount,
+    status: job.status,
+  };
+  void browser.runtime.sendMessage(msg).catch(() => {});
+  void broadcastProgressToTabs(job);
+}
+
+// Full-state broadcast — sends the complete items array. Used once on job
+// start so the options page can render all rows immediately.
+function broadcastJobStart(job: DownloadJob): void {
   const msg: MDJobProgressMessage = {
     type: "MD_JOB_PROGRESS",
     jobId: job.jobId,
@@ -32,22 +70,54 @@ function broadcastProgress(job: DownloadJob): void {
   void broadcastProgressToTabs(job);
 }
 
-async function broadcastProgressToTabs(job: DownloadJob): Promise<void> {
-  const msg = {
+// Per-item broadcast — sends counts + the one changed item so the options
+// page can patch a single DOM row instead of rebuilding all 50.
+function broadcastItemUpdate(job: DownloadJob, idx: number): void {
+  const item = job.items?.[idx];
+  if (!item) return;
+  const msg: MDJobProgressMessage = {
     type: "MD_JOB_PROGRESS",
+    jobId: job.jobId,
+    completedCount: job.completedCount,
+    totalCount: job.totalCount,
+    failedCount: job.failedCount,
+    status: job.status,
+    itemDelta: {
+      idx,
+      status: item.status,
+      filename: item.filename,
+      ...(item.error ? { error: item.error } : {}),
+      ...(item.sourceUrl ? { sourceUrl: item.sourceUrl } : {}),
+    },
+  };
+  void browser.runtime.sendMessage(msg).catch(() => {});
+}
+
+async function broadcastProgressToTabs(job: DownloadJob): Promise<void> {
+  // Content tabs only need terminal-state messages (crawl cancel + button
+  // reset). Running updates are options-page only (via runtime.sendMessage
+  // above). This eliminates the tabs.query({}) + serial sendMessage-to-all
+  // storm that froze the browser during large crawls.
+  if (job.status === "running") return;
+
+  const tabId = jobTabIds.get(job.jobId);
+  if (tabId === undefined) return;
+
+  const msg = {
+    type: "MD_JOB_PROGRESS" as const,
     jobId: job.jobId,
     completedCount: job.completedCount,
     totalCount: job.totalCount,
     status: job.status,
   };
   try {
-    const tabs = await browser.tabs.query({});
-    for (const tab of tabs) {
-      if (tab.id) {
-        await browser.tabs.sendMessage(tab.id, msg).catch(() => {});
-      }
-    }
-  } catch {}
+    await browser.tabs.sendMessage(tabId, msg).catch(() => {
+      // Tab may have closed — stop tracking it.
+      jobTabIds.delete(job.jobId);
+    });
+  } catch {
+    jobTabIds.delete(job.jobId);
+  }
 }
 
 // Bind job store updates to broadcast progress
@@ -161,16 +231,13 @@ async function runQueue(
   entries: QueueEntry[],
   maxParallel: number,
   maxRetries: number,
+  skipExisting: boolean,
 ): Promise<void> {
   let cursor = 0;
 
   async function runOne(): Promise<void> {
     while (cursor < entries.length) {
-      const currentJobs = await readJobs();
-      const currentJob = currentJobs.find((j) => j.jobId === job.jobId);
-      if (!currentJob || currentJob.status === "canceled") {
-        break;
-      }
+      if (isJobCancelled(job.jobId)) break;
 
       const entry = entries[cursor++];
       if (!entry) continue;
@@ -186,7 +253,7 @@ async function runQueue(
       if (job.items?.[idx]) {
         job.items[idx].status = "running";
         await upsertJob(job);
-        broadcastProgress(job);
+        broadcastItemUpdate(job, idx);
       }
 
       let imageUrl: string;
@@ -205,14 +272,12 @@ async function runQueue(
           job.items[idx].error = String(resolveErr);
         }
         await upsertJob(job);
-        broadcastProgress(job);
+        broadcastItemUpdate(job, idx);
         continue;
       }
 
       // Check cancellation right after resolving the item
-      const currentJobsCheck = await readJobs();
-      const currentJobCheck = currentJobsCheck.find((j) => j.jobId === job.jobId);
-      if (!currentJobCheck || currentJobCheck.status === "canceled") {
+      if (isJobCancelled(job.jobId)) {
         job.status = "canceled";
         if (job.items?.[idx]) {
           job.items[idx].status = "pending";
@@ -229,14 +294,33 @@ async function runQueue(
       const itemSubfolder = item.subfolder ?? job.subfolder;
       const filePath = itemSubfolder ? `${itemSubfolder}/${safeFilename}` : safeFilename;
 
+      // Skip-if-exists: check the IDB [subfolder+displayName] composite index
+      // for a previously downloaded item. O(1) lookup — replaces the
+      // chrome.downloads.search approach (which won't work for LO's clear-
+      // history workflow). Catches duplicates within the same job and files
+      // from previous jobs that the job-start dedup might have missed.
+      const displayName = item.kind === "resolve-viewer" ? item.viewerUrl : item.imageUrl;
+      if (skipExisting && displayName) {
+        const existing = await findDoneItem(itemSubfolder, displayName);
+        if (existing) {
+          job.completedCount++;
+          if (job.items?.[idx]) {
+            job.items[idx].status = "done";
+            job.items[idx].filename = existing.filename || safeFilename;
+          }
+          void appendLog("debug", `Skipped (exists in history): ${displayName}`, job.jobId);
+          await upsertJob(job);
+          broadcastItemUpdate(job, idx);
+          continue;
+        }
+      }
+
       try {
         let succeeded = false;
         let lastErr: unknown;
         let isCanceled = false;
         for (let attempt = 0; attempt <= maxRetries; attempt++) {
-          const jobsCheck = await readJobs();
-          const jobCheck = jobsCheck.find((j) => j.jobId === job.jobId);
-          if (!jobCheck || jobCheck.status === "canceled") {
+          if (isJobCancelled(job.jobId)) {
             job.status = "canceled";
             isCanceled = true;
             break;
@@ -296,7 +380,7 @@ async function runQueue(
         }
       }
       await upsertJob(job);
-      broadcastProgress(job);
+      broadcastItemUpdate(job, idx);
     }
   }
 
@@ -307,8 +391,6 @@ async function runQueue(
 // ── Public API ───────────────────────────────────────────────────────────────
 
 export async function startGalleryJob(req: MDGalleryStartRequest): Promise<void> {
-  const historyJobs = await readJobs();
-
   const job: DownloadJob = {
     jobId: req.jobId,
     hosterId: req.hosterId,
@@ -322,44 +404,37 @@ export async function startGalleryJob(req: MDGalleryStartRequest): Promise<void>
     maxParallelImg: req.maxParallelImg,
     maxParallelVid: req.maxParallelVid,
     postedAt: req.postedAt,
-    items: req.items.map((item) => {
-      const displayName = item.kind === "resolve-viewer" ? item.viewerUrl : item.imageUrl;
-      // The hoster/viewer page URL for the Downloads tab's "click to verify"
-      // link. For resolve-viewer items this is the viewerUrl itself; for
-      // resolved items, prefer the explicit sourceUrl (set by aggregators like
-      // girlsreleased that know the original page), falling back to the image
-      // URL so non-aggregator hosters still get a clickable link.
-      const sourceUrl =
-        item.kind === "resolve-viewer" ? item.viewerUrl : (item.sourceUrl ?? item.imageUrl);
-      let alreadyDownloaded = false;
-      let historicalFilename = "";
-
-      for (const hj of historyJobs) {
-        if (hj.subfolder !== req.subfolder) continue;
-        const matched = hj.items?.find(
-          (hi) => hi.displayName === displayName && hi.status === "done",
-        );
-        if (matched) {
-          alreadyDownloaded = true;
-          historicalFilename = matched.filename;
-          break;
-        }
-      }
-
-      const result: DownloadJobItem = {
-        displayName,
-        filename: historicalFilename || item.filename,
-        status: alreadyDownloaded ? ("done" as const) : ("pending" as const),
-      };
-      if (sourceUrl) result.sourceUrl = sourceUrl;
-      return result;
-    }),
+    items: [],
   };
+
+  // Dedup: for each item, check if a done item with the same [subfolder+
+  // displayName] already exists in IDB. This uses the composite index — O(1)
+  // per item instead of the old O(jobs × items) nested loop.
+  for (let i = 0; i < req.items.length; i++) {
+    const item = req.items[i];
+    if (!item) continue;
+    const displayName = item.kind === "resolve-viewer" ? item.viewerUrl : item.imageUrl;
+    const sourceUrl =
+      item.kind === "resolve-viewer" ? item.viewerUrl : (item.sourceUrl ?? item.imageUrl);
+
+    const existing = await findDoneItem(req.subfolder, displayName);
+    const result: DownloadJobItem = {
+      displayName,
+      filename: existing ? existing.filename : item.filename,
+      status: existing ? ("done" as const) : ("pending" as const),
+    };
+    if (sourceUrl) result.sourceUrl = sourceUrl;
+    if (job.items) {
+      job.items[i] = result;
+    } else {
+      job.items = [result];
+    }
+  }
 
   job.completedCount = job.items?.filter((item) => item.status === "done").length ?? 0;
 
   await upsertJob(job);
-  broadcastProgress(job);
+  broadcastJobStart(job);
 
   // Partition items by media type so videos (large, CDN-throttled) get their
   // own lower-parallelism queue while images stay aggressive.
@@ -373,21 +448,25 @@ export async function startGalleryJob(req: MDGalleryStartRequest): Promise<void>
     job.jobId,
   );
 
-  // Read maxDownloadRetries from settings
+  // Read maxDownloadRetries + skipExistingFiles from settings
   const stored = await browser.storage.local.get({
     maxDownloadRetries: DEFAULT_SETTINGS.maxDownloadRetries,
+    skipExistingFiles: DEFAULT_SETTINGS.skipExistingFiles,
   });
   const maxRetries =
     typeof stored["maxDownloadRetries"] === "number"
       ? stored["maxDownloadRetries"]
       : DEFAULT_SETTINGS.maxDownloadRetries;
+  const skipExisting =
+    typeof stored["skipExistingFiles"] === "boolean"
+      ? stored["skipExistingFiles"]
+      : DEFAULT_SETTINGS.skipExistingFiles;
 
   // Chain the execution of this job to serialize downloading.
   const myTurn = activeJobPromise
     .then(async () => {
       // Read latest status to verify it wasn't cancelled while waiting in the queue
-      const latestJobs = await readJobs();
-      const latestJob = latestJobs.find((j) => j.jobId === job.jobId);
+      const latestJob = await getJob(job.jobId);
       // A job that's been cleared from storage is just as dead as one marked
       // canceled — treat "not found" as aborted so we never resurrect a cleared
       // job as "done" with zero progress (the repopulate-after-clear bug).
@@ -398,13 +477,12 @@ export async function startGalleryJob(req: MDGalleryStartRequest): Promise<void>
       // Run both queues concurrently — images at maxParallelImg, media at maxParallelVid.
       // Both share the same job counters; job completes when both queues drain.
       await Promise.all([
-        runQueue(job, imageEntries, req.maxParallelImg, maxRetries),
-        runQueue(job, mediaEntries, req.maxParallelVid, maxRetries),
+        runQueue(job, imageEntries, req.maxParallelImg, maxRetries, skipExisting),
+        runQueue(job, mediaEntries, req.maxParallelVid, maxRetries, skipExisting),
       ]);
 
       // Read latest job status from storage to see if it was cancelled
-      const latestJobsAfter = await readJobs();
-      const latestJobAfter = latestJobsAfter.find((j) => j.jobId === job.jobId);
+      const latestJobAfter = await getJob(job.jobId);
       // Not-found = cleared by the user mid-run. Don't resurrect it as "done".
       if (!latestJobAfter || latestJobAfter.status === "canceled") {
         void appendLog(
@@ -416,6 +494,12 @@ export async function startGalleryJob(req: MDGalleryStartRequest): Promise<void>
       }
 
       job.status = job.failedCount > 0 ? "error" : "done";
+      // Done jobs can't be resumed (resumeJob only accepts canceled/error),
+      // so originalItems is pure waste. Trim it to reduce storage payload.
+      // Error/canceled jobs keep originalItems for resume.
+      if (job.status === "done") {
+        job.originalItems = undefined;
+      }
       await upsertJob(job);
       broadcastProgress(job);
       void appendLog(
@@ -426,6 +510,9 @@ export async function startGalleryJob(req: MDGalleryStartRequest): Promise<void>
     })
     .catch((err) => {
       console.error(`[md] Error running queued job ${job.jobId}:`, err);
+    })
+    .finally(() => {
+      unregisterJobTab(job.jobId);
     });
 
   activeJobPromise = myTurn;
@@ -473,9 +560,7 @@ export async function updateCrawlProgress(req: {
   failedCount: number;
   setCount: number;
 }): Promise<void> {
-  const jobs = await readJobs();
-  const idx = jobs.findIndex((j) => j.jobId === req.crawlId);
-  const job = jobs[idx];
+  const job = await getJob(req.crawlId);
   if (!job || job.status !== "running") return; // cancelled/gone — drop update
   job.completedCount = req.resolvedCount + req.failedCount;
   job.failedCount = req.failedCount;
@@ -485,22 +570,25 @@ export async function updateCrawlProgress(req: {
 }
 
 export async function finishCrawlJob(req: { crawlId: string; aborted: boolean }): Promise<void> {
-  const jobs = await readJobs();
-  const idx = jobs.findIndex((j) => j.jobId === req.crawlId);
-  const job = jobs[idx];
-  if (!job) return; // already cleared
+  const job = await getJob(req.crawlId);
+  if (!job) {
+    unregisterJobTab(req.crawlId);
+    return; // already cleared
+  }
   if (req.aborted) {
     if (job.status === "running") {
       job.status = "canceled";
       await upsertJob(job);
       broadcastProgress(job);
     }
+    unregisterJobTab(req.crawlId);
     void appendLog("warn", "Crawl aborted by user — no downloads started", req.crawlId);
     return;
   }
   job.status = job.failedCount > 0 ? "error" : "done";
   await upsertJob(job);
   broadcastProgress(job);
+  unregisterJobTab(req.crawlId);
   void appendLog(
     "info",
     `Crawl complete: ${job.completedCount - job.failedCount} sets resolved, ${job.failedCount} failed — posting download jobs`,

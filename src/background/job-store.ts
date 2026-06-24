@@ -1,23 +1,117 @@
 import browser from "webextension-polyfill";
-import type { DownloadJob } from "../types/jobs";
+import type { DownloadJob, DownloadJobItem } from "../types/jobs";
 import type { MDGalleryStartRequest } from "../types/messages";
 import { DEFAULT_SETTINGS } from "../settings/schema";
 import { appendLog } from "./logger";
 import { cancelActiveDownloads } from "./download-tracker";
+import {
+  openDB,
+  idbGetJob,
+  idbGetAllJobs,
+  idbPutJob,
+  idbDeleteJob,
+  idbClearAllJobs,
+  idbPutJobItem,
+  idbGetJobItems,
+  idbDeleteJobItems,
+  idbClearAllJobItems,
+  idbFindDoneItem,
+  idbGcCompletedJobs,
+  type DownloadJobRecord,
+  type JobItemRecord,
+} from "./idb";
 
-const JOBS_KEY = "downloadJobs";
+// Legacy storage key — used only for one-time migration on SW startup.
+const LEGACY_JOBS_KEY = "downloadJobs";
 
-let storagePromise: Promise<any> = Promise.resolve();
+// ── In-memory cancel cache ───────────────────────────────────────────────────
+// Per-item cancel checks in runQueue used to call readJobs() (deserializing ALL
+// 101 jobs × ~100 objects) 3× per item — ~150M object ops during a 101-gallery
+// crawl. This Set replaces those reads with an O(1) lookup. Populated by
+// cancelJob/cancelAllJobs/clearAllJobs/deleteJob, cleared by resumeJob. Lost on
+// SW restart, which is fine: resumeRunningJobs() marks all "running" jobs as
+// "error" on restart, so no queue is alive to check the cache.
+const cancelledJobs = new Set<string>();
 
-export async function runInStorageQueue<T>(fn: () => Promise<T>): Promise<T> {
-  const myTurn = storagePromise.then(fn);
-  storagePromise = myTurn.catch(() => {});
-  return myTurn;
+export function isJobCancelled(jobId: string): boolean {
+  return cancelledJobs.has(jobId);
 }
 
-export async function readJobs(): Promise<DownloadJob[]> {
-  const stored = await browser.storage.local.get({ [JOBS_KEY]: [] });
-  return (stored[JOBS_KEY] as DownloadJob[] | undefined) ?? [];
+function cancelJobInCache(jobId: string): void {
+  cancelledJobs.add(jobId);
+}
+
+function uncancelJobInCache(jobId: string): void {
+  cancelledJobs.delete(jobId);
+}
+
+// ── Migration: storage.local → IDB ───────────────────────────────────────────
+// One-time pass on SW startup. Idempotent — skips if IDB already has data.
+export async function migrateJobsIfNeeded(): Promise<void> {
+  const db = await openDB();
+  const count = await new Promise<number>((resolve, reject) => {
+    const req = db.transaction("jobs", "readonly").objectStore("jobs").count();
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+  if (count > 0) return; // already migrated
+
+  const raw = await browser.storage.local.get({ [LEGACY_JOBS_KEY]: [] });
+  const legacyJobs = (raw[LEGACY_JOBS_KEY] as DownloadJob[] | undefined) ?? [];
+  if (legacyJobs.length === 0) return; // fresh install
+
+  console.log(`[md] Migrating ${legacyJobs.length} jobs from storage.local to IDB…`);
+  const db2 = await openDB();
+  const tx = db2.transaction(["jobs", "jobItems"], "readwrite");
+  const jobStore = tx.objectStore("jobs");
+  const itemStore = tx.objectStore("jobItems");
+
+  for (const job of legacyJobs) {
+    // Write job record (without items — those go to jobItems store)
+    const record: DownloadJobRecord = {
+      jobId: job.jobId,
+      hosterId: job.hosterId,
+      subfolder: job.subfolder,
+      totalCount: job.totalCount,
+      completedCount: job.completedCount,
+      failedCount: job.failedCount,
+      status: job.status,
+      startedAt: job.startedAt,
+      ...(job.originalItems ? { originalItems: job.originalItems } : {}),
+      ...(job.maxParallelImg !== undefined ? { maxParallelImg: job.maxParallelImg } : {}),
+      ...(job.maxParallelVid !== undefined ? { maxParallelVid: job.maxParallelVid } : {}),
+      ...(job.postedAt !== undefined ? { postedAt: job.postedAt } : {}),
+      ...(job.isCrawl ? { isCrawl: job.isCrawl } : {}),
+    };
+    jobStore.put(record);
+
+    // Write items to jobItems store
+    if (job.items) {
+      for (let i = 0; i < job.items.length; i++) {
+        const item = job.items[i];
+        if (!item) continue;
+        const itemRecord: JobItemRecord = {
+          jobId: job.jobId,
+          idx: i,
+          subfolder: job.subfolder,
+          displayName: item.displayName,
+          filename: item.filename,
+          status: item.status as JobItemRecord["status"],
+          ...(item.error ? { error: item.error } : {}),
+          ...(item.sourceUrl ? { sourceUrl: item.sourceUrl } : {}),
+        };
+        itemStore.put(itemRecord);
+      }
+    }
+  }
+
+  await new Promise<void>((resolve, reject) => {
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+
+  await browser.storage.local.remove(LEGACY_JOBS_KEY);
+  console.log("[md] Migration complete — legacy downloadJobs key removed.");
 }
 
 export let onJobUpdated: ((job: DownloadJob) => void) | null = null;
@@ -26,168 +120,248 @@ export function setJobUpdatedListener(listener: (job: DownloadJob) => void): voi
   onJobUpdated = listener;
 }
 
-export async function upsertJob(job: DownloadJob): Promise<void> {
-  return runInStorageQueue(async () => {
-    const jobs = await readJobs();
-    const idx = jobs.findIndex((j) => j.jobId === job.jobId);
-    if (idx >= 0) {
-      const existing = jobs[idx];
-      if (existing && existing.status === "canceled") {
-        job.status = "canceled";
-      }
-      jobs[idx] = job;
-    } else {
-      jobs.unshift(job); // newest first
-      // Keep at most 50 completed jobs to avoid unbounded storage growth
-      const keep = jobs
-        .filter((j) => j.status === "running")
-        .concat(jobs.filter((j) => j.status !== "running").slice(0, 50));
-      await browser.storage.local.set({ [JOBS_KEY]: keep });
-      if (onJobUpdated) {
-        onJobUpdated(job);
-      }
-      return;
-    }
-    await browser.storage.local.set({ [JOBS_KEY]: jobs });
-    if (onJobUpdated) {
-      onJobUpdated(job);
-    }
-  });
+// Convert an IDB job record + item records back into the DownloadJob shape that
+// gallery.ts and the options page expect.
+function reconstructJob(record: DownloadJobRecord, items: JobItemRecord[]): DownloadJob {
+  const sortedItems = items.sort((a, b) => a.idx - b.idx);
+  const jobItems: DownloadJobItem[] = sortedItems.map((item) => ({
+    displayName: item.displayName,
+    filename: item.filename,
+    status: item.status,
+    ...(item.error ? { error: item.error } : {}),
+    ...(item.sourceUrl ? { sourceUrl: item.sourceUrl } : {}),
+  }));
+  const job: DownloadJob = {
+    jobId: record.jobId,
+    hosterId: record.hosterId as DownloadJob["hosterId"],
+    subfolder: record.subfolder,
+    totalCount: record.totalCount,
+    completedCount: record.completedCount,
+    failedCount: record.failedCount,
+    status: record.status,
+    startedAt: record.startedAt,
+    items: jobItems,
+    ...(record.originalItems
+      ? { originalItems: record.originalItems as DownloadJob["originalItems"] }
+      : {}),
+    ...(record.maxParallelImg ? { maxParallelImg: record.maxParallelImg } : {}),
+    ...(record.maxParallelVid ? { maxParallelVid: record.maxParallelVid } : {}),
+    ...(record.postedAt ? { postedAt: record.postedAt } : {}),
+    ...(record.isCrawl ? { isCrawl: record.isCrawl } : {}),
+  };
+  return job;
 }
 
+// Convert a DownloadJob into an IDB job record (without items).
+function toJobRecord(job: DownloadJob): DownloadJobRecord {
+  return {
+    jobId: job.jobId,
+    hosterId: job.hosterId,
+    subfolder: job.subfolder,
+    totalCount: job.totalCount,
+    completedCount: job.completedCount,
+    failedCount: job.failedCount,
+    status: job.status,
+    startedAt: job.startedAt,
+    ...(job.originalItems ? { originalItems: job.originalItems } : {}),
+    ...(job.maxParallelImg ? { maxParallelImg: job.maxParallelImg } : {}),
+    ...(job.maxParallelVid ? { maxParallelVid: job.maxParallelVid } : {}),
+    ...(job.postedAt ? { postedAt: job.postedAt } : {}),
+    ...(job.isCrawl ? { isCrawl: job.isCrawl } : {}),
+  };
+}
+
+// ── Public API ───────────────────────────────────────────────────────────────
+
+// Upsert a job + all its items to IDB. Writes ONE job record + N item records
+// (not all 101 jobs like the old storage.local approach). The per-item writes
+// are simple record puts — no JSON serialization of sibling jobs.
+export async function upsertJob(job: DownloadJob): Promise<void> {
+  // If the job was cancelled while we were working, respect that.
+  if (isJobCancelled(job.jobId) && job.status === "running") {
+    job.status = "canceled";
+  }
+
+  const record = toJobRecord(job);
+  await idbPutJob(record);
+
+  // Write items to jobItems store
+  if (job.items) {
+    for (let i = 0; i < job.items.length; i++) {
+      const item = job.items[i];
+      if (!item) continue;
+      const itemRecord: JobItemRecord = {
+        jobId: job.jobId,
+        idx: i,
+        subfolder: job.subfolder,
+        displayName: item.displayName,
+        filename: item.filename,
+        status: item.status,
+        ...(item.error ? { error: item.error } : {}),
+        ...(item.sourceUrl ? { sourceUrl: item.sourceUrl } : {}),
+      };
+      await idbPutJobItem(itemRecord);
+    }
+  }
+
+  // GC: cap completed jobs at 50 (only when a job transitions to done/error)
+  if (job.status === "done" || job.status === "error") {
+    await idbGcCompletedJobs(50).catch((err) => {
+      console.warn("[md] GC pass failed:", err);
+    });
+  }
+
+  if (onJobUpdated) {
+    onJobUpdated(job);
+  }
+}
+
+// Read a single job with its items reconstructed.
+export async function getJob(jobId: string): Promise<DownloadJob | null> {
+  const record = await idbGetJob(jobId);
+  if (!record) return null;
+  const items = await idbGetJobItems(jobId);
+  return reconstructJob(record, items);
+}
+
+// List all jobs with items reconstructed, sorted by startedAt ascending.
 export async function listJobs(): Promise<DownloadJob[]> {
-  const jobs = await readJobs();
+  const records = await idbGetAllJobs();
+  const jobs: DownloadJob[] = [];
+  for (const record of records) {
+    const items = await idbGetJobItems(record.jobId);
+    jobs.push(reconstructJob(record, items));
+  }
   return jobs.sort((a, b) => a.startedAt - b.startedAt);
 }
 
-export async function deleteJob(jobId: string): Promise<void> {
-  return runInStorageQueue(async () => {
-    const jobs = await readJobs();
-    const filtered = jobs.filter((j) => j.jobId !== jobId);
-    await browser.storage.local.set({ [JOBS_KEY]: filtered });
-  });
+// Read all job records (without items) — lighter than listJobs, used internally
+// where items aren't needed (e.g. cancelAllJobs iterates job metadata only).
+async function getAllJobRecords(): Promise<DownloadJobRecord[]> {
+  return idbGetAllJobs();
 }
 
-// Cancel every running job, then wipe the whole job list. Goes through the
-// storage queue so it can't race with an in-flight upsertJob that would
-// otherwise re-write the stale list back (the "I cleared it and it repopulated"
-// bug). The options page MUST use this instead of writing downloadJobs: [] raw.
+// Dedup check: is there a done item with this subfolder + displayName?
+// Uses the [subfolder+displayName] composite index — O(1) lookup.
+export async function findDoneItem(
+  subfolder: string,
+  displayName: string,
+): Promise<DownloadJobItem | null> {
+  const record = await idbFindDoneItem(subfolder, displayName);
+  if (!record) return null;
+  return {
+    displayName: record.displayName,
+    filename: record.filename,
+    status: "done",
+    ...(record.sourceUrl ? { sourceUrl: record.sourceUrl } : {}),
+  };
+}
+
+export async function deleteJob(jobId: string): Promise<void> {
+  cancelJobInCache(jobId);
+  await idbDeleteJob(jobId);
+  await idbDeleteJobItems(jobId);
+}
+
+// Cancel every running job, then wipe the whole job list.
 export async function clearAllJobs(): Promise<void> {
   await cancelAllJobs();
-  return runInStorageQueue(async () => {
-    await browser.storage.local.set({ [JOBS_KEY]: [] });
-  });
+  await idbClearAllJobs();
+  await idbClearAllJobItems();
 }
 
 export async function cancelJob(jobId: string): Promise<void> {
-  return runInStorageQueue(async () => {
-    const jobs = await readJobs();
-    const idx = jobs.findIndex((j) => j.jobId === jobId);
-    const job = jobs[idx];
-    if (job && job.status === "running") {
-      job.status = "canceled";
-      jobs[idx] = job;
-      await browser.storage.local.set({ [JOBS_KEY]: jobs });
+  const record = await idbGetJob(jobId);
+  if (!record || record.status !== "running") return;
 
-      // Cancel all active downloads in browser for this job
-      cancelActiveDownloads(jobId);
+  record.status = "canceled";
+  await idbPutJob(record);
 
-      if (onJobUpdated) {
-        onJobUpdated(job);
-      }
-      void appendLog("warn", "Job cancelled by user", jobId);
-    }
-  });
+  cancelJobInCache(jobId);
+  cancelActiveDownloads(jobId);
+
+  if (onJobUpdated) {
+    const items = await idbGetJobItems(jobId);
+    onJobUpdated(reconstructJob(record, items));
+  }
+  void appendLog("warn", "Job cancelled by user", jobId);
 }
 
 export async function cancelAllJobs(): Promise<void> {
-  return runInStorageQueue(async () => {
-    const jobs = await readJobs();
-    let changed = false;
-    for (const job of jobs) {
-      if (job.status === "running") {
-        job.status = "canceled";
-        changed = true;
+  const records = await getAllJobRecords();
+  for (const record of records) {
+    if (record.status === "running") {
+      record.status = "canceled";
+      await idbPutJob(record);
 
-        // Cancel all active downloads in browser for this job
-        cancelActiveDownloads(job.jobId);
+      cancelJobInCache(record.jobId);
+      cancelActiveDownloads(record.jobId);
 
-        if (onJobUpdated) {
-          onJobUpdated(job);
-        }
-        void appendLog("warn", "Job cancelled by user (global stop)", job.jobId);
+      if (onJobUpdated) {
+        const items = await idbGetJobItems(record.jobId);
+        onJobUpdated(reconstructJob(record, items));
       }
+      void appendLog("warn", "Job cancelled by user (global stop)", record.jobId);
     }
-    if (changed) {
-      await browser.storage.local.set({ [JOBS_KEY]: jobs });
-    }
-  });
+  }
 }
 
 export async function resumeJob(
   jobId: string,
   onStartJob: (req: MDGalleryStartRequest) => void,
 ): Promise<void> {
-  return runInStorageQueue(async () => {
-    const jobs = await readJobs();
-    const idx = jobs.findIndex((j) => j.jobId === jobId);
-    const job = jobs[idx];
-    if (job && (job.status === "canceled" || job.status === "error")) {
-      const req: MDGalleryStartRequest = {
-        type: "MD_GALLERY_START",
-        jobId: job.jobId,
-        hosterId: job.hosterId,
-        subfolder: job.subfolder,
-        items: job.originalItems || [],
-        maxParallelImg: job.maxParallelImg ?? DEFAULT_SETTINGS.maxParallelImg,
-        maxParallelVid: job.maxParallelVid ?? DEFAULT_SETTINGS.maxParallelVid,
-        postedAt: job.postedAt,
-      };
+  const record = await idbGetJob(jobId);
+  if (!record || (record.status !== "canceled" && record.status !== "error")) return;
 
-      job.status = "running";
-      job.startedAt = Date.now(); // reset started time so it's fresh
-      jobs[idx] = job;
-      await browser.storage.local.set({ [JOBS_KEY]: jobs });
+  uncancelJobInCache(jobId);
+  const req: MDGalleryStartRequest = {
+    type: "MD_GALLERY_START",
+    jobId: record.jobId,
+    hosterId: record.hosterId as MDGalleryStartRequest["hosterId"],
+    subfolder: record.subfolder,
+    items: (record.originalItems ?? []) as MDGalleryStartRequest["items"],
+    maxParallelImg: record.maxParallelImg ?? DEFAULT_SETTINGS.maxParallelImg,
+    maxParallelVid: record.maxParallelVid ?? DEFAULT_SETTINGS.maxParallelVid,
+    ...(record.postedAt ? { postedAt: record.postedAt } : {}),
+  };
 
-      if (onJobUpdated) {
-        onJobUpdated(job);
-      }
+  record.status = "running";
+  record.startedAt = Date.now();
+  await idbPutJob(record);
 
-      setTimeout(() => {
-        onStartJob(req);
-      }, 0);
-    }
-  });
+  if (onJobUpdated) {
+    const items = await idbGetJobItems(jobId);
+    onJobUpdated(reconstructJob(record, items));
+  }
+
+  setTimeout(() => {
+    onStartJob(req);
+  }, 0);
 }
 
 export async function resumeAllJobs(
   onStartJob: (req: MDGalleryStartRequest) => void,
 ): Promise<void> {
-  const jobs = await readJobs();
-  for (const job of jobs) {
-    if (job.status === "canceled" || job.status === "error") {
-      void resumeJob(job.jobId, onStartJob).catch(() => {});
+  const records = await getAllJobRecords();
+  for (const record of records) {
+    if (record.status === "canceled" || record.status === "error") {
+      void resumeJob(record.jobId, onStartJob).catch(() => {});
     }
   }
 }
 
 export async function resumeRunningJobs(): Promise<void> {
-  return runInStorageQueue(async () => {
-    const jobs = await readJobs();
-    let changed = false;
-    for (const job of jobs) {
-      if (job.status === "running") {
-        job.status = "error";
-        changed = true;
+  const records = await getAllJobRecords();
+  for (const record of records) {
+    if (record.status === "running") {
+      record.status = "error";
+      await idbPutJob(record);
 
-        if (onJobUpdated) {
-          onJobUpdated(job);
-        }
-        void appendLog("warn", "Job marked error: SW restarted mid-run", job.jobId);
+      if (onJobUpdated) {
+        const items = await idbGetJobItems(record.jobId);
+        onJobUpdated(reconstructJob(record, items));
       }
+      void appendLog("warn", "Job marked error: SW restarted mid-run", record.jobId);
     }
-    if (changed) {
-      await browser.storage.local.set({ [JOBS_KEY]: jobs });
-    }
-  });
+  }
 }

@@ -25,6 +25,11 @@ export type Settings = {
   autoFolderPerAlbum: boolean; // if true: downloads/{directory}/{albumId}/file.ext
   verboseLogging: boolean; // if true: SW emits debug-level entries to the Logs tab
   maxDownloadRetries: number; // 0–10; number of retry attempts for transient download errors
+  // Skip downloading files that already exist in history (same subfolder +
+  // displayName). Uses the IDB [subfolder+displayName] composite index — O(1)
+  // per item. Persists across SW/browser restarts. Independent of
+  // chrome.downloads (which the user clears).
+  skipExistingFiles: boolean;
 };
 
 // Payload delivered from isolated.ts (ISOLATED, can read storage) to main.ts

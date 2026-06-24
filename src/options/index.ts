@@ -29,9 +29,26 @@ function persistSoon(): void {
 
 // ── Downloads tab state ───────────────────────────────
 let dlRefreshTimer: ReturnType<typeof setInterval> | undefined;
+// Pause the 3s polling while live messages are streaming in. Auto-resumes
+// after POLL_QUIET_MS of message silence (catches SW-restart edge case).
+let pollResumeTimer: ReturnType<typeof setTimeout> | undefined;
+const POLL_INTERVAL_MS = 3000;
+const POLL_QUIET_MS = 10_000;
 type DlSubTab = "settings" | "history" | "logs";
 let activeDlSubTab: DlSubTab = "settings";
 const expandedJobIds = new Set<string>();
+
+function startPolling(): void {
+  clearInterval(dlRefreshTimer);
+  dlRefreshTimer = setInterval(() => void loadHistoryTab(expandedJobIds), POLL_INTERVAL_MS);
+}
+
+function pausePolling(): void {
+  clearInterval(dlRefreshTimer);
+  dlRefreshTimer = undefined;
+  clearTimeout(pollResumeTimer);
+  pollResumeTimer = setTimeout(startPolling, POLL_QUIET_MS);
+}
 
 // ── Tabs ──────────────────────────────────────────────
 type Tab = "hosters" | "downloads";
@@ -40,6 +57,7 @@ let activeTab: Tab = "downloads";
 function switchDlSubTab(tab: DlSubTab): void {
   activeDlSubTab = tab;
   clearInterval(dlRefreshTimer);
+  clearTimeout(pollResumeTimer);
 
   for (const t of ["settings", "history", "logs"] as const) {
     $(`stab-${t}`).className = t === tab ? "hoster-item active" : "hoster-item";
@@ -52,7 +70,7 @@ function switchDlSubTab(tab: DlSubTab): void {
     renderDownloadsSettings(settings, persist, persistSoon);
   } else if (tab === "history") {
     void loadHistoryTab(expandedJobIds);
-    dlRefreshTimer = setInterval(() => void loadHistoryTab(expandedJobIds), 3000);
+    startPolling();
   } else {
     void loadLogsTab();
   }
@@ -70,6 +88,7 @@ function switchTab(tab: Tab): void {
     $("view-hosters").removeAttribute("hidden");
     $("view-downloads").setAttribute("hidden", "");
     clearInterval(dlRefreshTimer);
+    clearTimeout(pollResumeTimer);
   } else {
     $("view-hosters").setAttribute("hidden", "");
     $("view-downloads").removeAttribute("hidden");
@@ -97,6 +116,7 @@ async function init(): Promise<void> {
     (settings as any).subfolderPrefix ?? DEFAULT_SETTINGS.downloadDirectory;
   settings.autoFolderPerAlbum ??= DEFAULT_SETTINGS.autoFolderPerAlbum;
   settings.verboseLogging ??= DEFAULT_SETTINGS.verboseLogging;
+  settings.skipExistingFiles ??= DEFAULT_SETTINGS.skipExistingFiles;
 
   $<HTMLSpanElement>("version").textContent = `v${browser.runtime.getManifest().version}`;
 
@@ -116,8 +136,10 @@ async function init(): Promise<void> {
   $("btn-copy-logs").addEventListener("click", () => {
     void (async () => {
       try {
-        const raw = await browser.storage.local.get({ downloadLogs: [] });
-        const logs = (raw["downloadLogs"] as DownloadLog[] | undefined) ?? [];
+        const res = (await browser.runtime.sendMessage({ type: "MD_GET_LOGS" })) as {
+          logs?: DownloadLog[];
+        };
+        const logs = res.logs ?? [];
         if (logs.length === 0) {
           toast("No logs to copy", true);
           return;
@@ -132,7 +154,7 @@ async function init(): Promise<void> {
   });
 
   $("btn-clear-logs").addEventListener("click", () => {
-    void browser.storage.local.set({ downloadLogs: [] }).then(() => {
+    void browser.runtime.sendMessage({ type: "MD_CLEAR_LOGS" }).then(() => {
       $("log-count").textContent = "0 entries";
       $("dl-logs").replaceChildren(
         el("p", { className: "default-note", textContent: "No logs yet." }),
@@ -174,6 +196,7 @@ async function init(): Promise<void> {
 
     // ── Progress update → History tab card ──
     if (m["type"] === "MD_JOB_PROGRESS" && activeDlSubTab === "history") {
+      pausePolling(); // live stream active — defer 3s poll
       const prog = m as Partial<MDJobProgressMessage>;
       const card = document.getElementById(`job-${prog.jobId ?? ""}`);
       if (!card) return;
@@ -258,6 +281,45 @@ async function init(): Promise<void> {
       }
 
       const itemsContainer = card.querySelector<HTMLElement>(".job-items");
+
+      // Per-item patch — update one row instead of rebuilding all 50.
+      // This is the hot path during a crawl: 10,100 single-row patches vs.
+      // 10,100 full-container rebuilds.
+      if (itemsContainer && prog.itemDelta) {
+        const delta = prog.itemDelta;
+        const row = itemsContainer.children[delta.idx];
+        if (row) {
+          const statusEl = row.querySelector<HTMLElement>(".item-status");
+          if (statusEl) {
+            const icon =
+              delta.status === "done"
+                ? "✓"
+                : delta.status === "error"
+                  ? "✗"
+                  : delta.status === "running"
+                    ? "●"
+                    : "○";
+            statusEl.className = `item-status ${delta.status}`;
+            statusEl.textContent = icon;
+          }
+          const filenameEl = row.querySelector<HTMLElement>(".item-filename");
+          if (filenameEl) {
+            filenameEl.textContent = delta.filename;
+          }
+          const existingError = row.querySelector<HTMLElement>(".item-error");
+          if (delta.error) {
+            if (existingError) {
+              existingError.textContent = ` (${delta.error})`;
+            } else {
+              row.append(el("span", { className: "item-error", textContent: ` (${delta.error})` }));
+            }
+          } else if (existingError) {
+            existingError.remove();
+          }
+        }
+      }
+
+      // Full items rebuild — only on job start (initial render).
       if (itemsContainer && prog.items) {
         itemsContainer.replaceChildren();
         for (const item of prog.items) {
