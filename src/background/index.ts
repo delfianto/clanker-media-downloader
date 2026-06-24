@@ -38,7 +38,9 @@ import { migrateLogsIfNeeded } from "./logger";
 initDownloadUi();
 
 // Recover any jobs that were mid-flight when the SW was last terminated.
-void resumeRunningJobs();
+void resumeRunningJobs((r) => {
+  void startGalleryJob(r);
+});
 
 // One-time migration: storage.local → IDB (jobs + logs). Idempotent.
 void migrateJobsIfNeeded();

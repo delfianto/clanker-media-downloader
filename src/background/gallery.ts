@@ -144,6 +144,15 @@ function sleep(ms: number): Promise<void> {
 // Offscreen logic moved to offscreen.ts
 
 async function downloadViaOffscreen(url: string, filePath: string, jobId?: string): Promise<void> {
+  // Adopt existing in-progress downloads to survive SW restarts
+  const inProgress = await browser.downloads.search({ state: "in_progress" });
+  const orphaned = inProgress.find((d) => d.filename.replace(/\\/g, "/").endsWith(filePath));
+  if (orphaned) {
+    void appendLog("debug", `Adopting orphaned offscreen download for ${filePath}`, jobId || "");
+    await trackDownload(orphaned.id, jobId || "", filePath);
+    return;
+  }
+
   await ensureOffscreenDocument();
 
   const response = (await browser.runtime.sendMessage({
@@ -167,7 +176,7 @@ async function downloadViaOffscreen(url: string, filePath: string, jobId?: strin
       conflictAction: "uniquify",
     });
 
-    await trackDownload(downloadId, jobId || "").finally(() => {
+    await trackDownload(downloadId, jobId || "", filePath).finally(() => {
       browser.runtime.sendMessage({ type: "MD_OFFSCREEN_CLEANUP", blobUrl }).catch(() => {});
     });
   } catch (err) {
@@ -218,6 +227,18 @@ export async function attemptDownload(
     }
   }
 
+  // Adopt existing in-progress downloads to survive SW restarts
+  const inProgress = await browser.downloads.search({ state: "in_progress" });
+  // Check either URL match or absolute filename ending with our relative path
+  const orphaned = inProgress.find(
+    (d) => d.url === url || d.filename.replace(/\\/g, "/").endsWith(filePath),
+  );
+  if (orphaned) {
+    void appendLog("debug", `Adopting orphaned native download for ${filePath}`, jobId || "");
+    await trackDownload(orphaned.id, jobId || "", filePath);
+    return;
+  }
+
   await precheckDownloadUrl(url);
 
   const downloadId = await browser.downloads.download({
@@ -225,7 +246,7 @@ export async function attemptDownload(
     filename: filePath,
     conflictAction: "uniquify",
   });
-  await trackDownload(downloadId, jobId || "");
+  await trackDownload(downloadId, jobId || "", filePath);
 }
 
 // Pair each item with its original index into job.items so we can partition

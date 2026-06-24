@@ -419,18 +419,37 @@ export async function resumeAllJobs(
   }
 }
 
-export async function resumeRunningJobs(): Promise<void> {
+export async function resumeRunningJobs(
+  onStartJob: (req: MDGalleryStartRequest) => void,
+): Promise<void> {
   const records = await getAllJobRecords();
   for (const record of records) {
     if (record.status === "running") {
-      record.status = "error";
-      await idbPutJob(record);
+      void appendLog("info", "SW restarted mid-run — resuming queue", record.jobId);
+
+      const currentSettings = await browser.storage.local.get(DEFAULT_SETTINGS);
+      record.maxParallelImg = currentSettings.maxParallelImg as number;
+      record.maxParallelVid = currentSettings.maxParallelVid as number;
+
+      const req: MDGalleryStartRequest = {
+        type: "MD_GALLERY_START",
+        jobId: record.jobId,
+        hosterId: record.hosterId as MDGalleryStartRequest["hosterId"],
+        subfolder: record.subfolder,
+        items: (record.originalItems ?? []) as MDGalleryStartRequest["items"],
+        maxParallelImg: record.maxParallelImg,
+        maxParallelVid: record.maxParallelVid,
+        ...(record.postedAt ? { postedAt: record.postedAt } : {}),
+      };
 
       if (onJobUpdated) {
         const items = await idbGetJobItems(record.jobId);
         onJobUpdated(reconstructJob(record, items));
       }
-      void appendLog("warn", "Job marked error: SW restarted mid-run", record.jobId);
+
+      setTimeout(() => {
+        onStartJob(req);
+      }, 0);
     }
   }
 }
