@@ -19,6 +19,10 @@ export type DownloadJobItem = {
   filename: string;
   status: "pending" | "running" | "done" | "error";
   error?: string;
+  // The hoster/viewer page URL for human verification — clicking the filename
+  // in the Downloads tab opens this in a new tab so the user can check whether
+  // a failed link is truly dead. Absent when no viewer page is known.
+  sourceUrl?: string;
 };
 
 // Persisted in chrome.storage.local under key "downloadJobs" as DownloadJob[].

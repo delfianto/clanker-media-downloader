@@ -55,13 +55,26 @@ export function renderJobCard(
               ? "●"
               : "○";
       const itemStatusClass = `item-status ${item.status}`;
+      // Render the filename as a link to the hoster page when sourceUrl is
+      // available, so the user can click through to verify if a failed link
+      // is truly dead. Falls back to a plain span when no URL is known.
+      const filenameEl = item.sourceUrl
+        ? el("a", {
+            className: "item-filename item-filename-link",
+            textContent: item.filename,
+            title: item.displayName,
+            href: item.sourceUrl,
+            target: "_blank",
+            rel: "noopener noreferrer",
+          })
+        : el("span", {
+            className: "item-filename",
+            textContent: item.filename,
+            title: item.displayName,
+          });
       const itemEl = el("div", { className: "job-item" }, [
         el("span", { className: itemStatusClass, textContent: statusIcon }),
-        el("span", {
-          className: "item-filename",
-          textContent: item.filename,
-          title: item.displayName,
-        }),
+        filenameEl,
       ]);
       if (item.error) {
         itemEl.append(el("span", { className: "item-error", textContent: ` (${item.error})` }));

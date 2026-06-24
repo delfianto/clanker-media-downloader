@@ -49,7 +49,17 @@ export type MDMainResponse = {
 // A gallery item that requires the SW to fetch a viewer page to extract the URL.
 // needsSign: true signals the bunkr sign-API step after extraction.
 export type GalleryJobItem =
-  | { kind: "resolved"; imageUrl: string; filename: string; subfolder?: string }
+  | {
+      kind: "resolved";
+      imageUrl: string;
+      filename: string;
+      subfolder?: string;
+      // The hoster/viewer page URL for human verification (e.g. imx.to/i/xxx).
+      // When the image was resolved directly from a thumbnail, this preserves
+      // the page a human can open to check if a failed link is truly dead.
+      // Absent for hosters that don't have a per-file viewer page.
+      sourceUrl?: string;
+    }
   | {
       kind: "resolve-viewer";
       viewerUrl: string;

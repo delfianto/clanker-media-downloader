@@ -173,6 +173,9 @@ async function crawlGirlsreleasedSet(
         imageUrl: fullUrl,
         filename: file.filename,
         subfolder: setSubfolder,
+        // Preserve the viewer page URL so the Downloads tab can link back to
+        // the hoster page for human verification of failed downloads.
+        sourceUrl: file.viewerUrl,
       });
     } else {
       resolvedFiles.push({

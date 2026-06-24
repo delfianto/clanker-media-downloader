@@ -270,13 +270,23 @@ async function init(): Promise<void> {
                   ? "●"
                   : "○";
           const itemStatusClass = `item-status ${item.status}`;
+          const filenameEl = item.sourceUrl
+            ? el("a", {
+                className: "item-filename item-filename-link",
+                textContent: item.filename,
+                title: item.displayName,
+                href: item.sourceUrl,
+                target: "_blank",
+                rel: "noopener noreferrer",
+              })
+            : el("span", {
+                className: "item-filename",
+                textContent: item.filename,
+                title: item.displayName,
+              });
           const itemEl = el("div", { className: "job-item" }, [
             el("span", { className: itemStatusClass, textContent: statusIcon }),
-            el("span", {
-              className: "item-filename",
-              textContent: item.filename,
-              title: item.displayName,
-            }),
+            filenameEl,
           ]);
           if (item.error) {
             itemEl.append(el("span", { className: "item-error", textContent: ` (${item.error})` }));

@@ -4,7 +4,7 @@ import type {
   MDGalleryStartRequest,
   MDJobProgressMessage,
 } from "../types/messages";
-import type { DownloadJob } from "../types/jobs";
+import type { DownloadJob, DownloadJobItem } from "../types/jobs";
 import { trackDownload } from "./download-tracker";
 import { upsertJob, readJobs, setJobUpdatedListener } from "./job-store";
 import { resolveItem } from "./item-resolver";
@@ -324,6 +324,13 @@ export async function startGalleryJob(req: MDGalleryStartRequest): Promise<void>
     postedAt: req.postedAt,
     items: req.items.map((item) => {
       const displayName = item.kind === "resolve-viewer" ? item.viewerUrl : item.imageUrl;
+      // The hoster/viewer page URL for the Downloads tab's "click to verify"
+      // link. For resolve-viewer items this is the viewerUrl itself; for
+      // resolved items, prefer the explicit sourceUrl (set by aggregators like
+      // girlsreleased that know the original page), falling back to the image
+      // URL so non-aggregator hosters still get a clickable link.
+      const sourceUrl =
+        item.kind === "resolve-viewer" ? item.viewerUrl : (item.sourceUrl ?? item.imageUrl);
       let alreadyDownloaded = false;
       let historicalFilename = "";
 
@@ -339,11 +346,13 @@ export async function startGalleryJob(req: MDGalleryStartRequest): Promise<void>
         }
       }
 
-      return {
+      const result: DownloadJobItem = {
         displayName,
         filename: historicalFilename || item.filename,
         status: alreadyDownloaded ? ("done" as const) : ("pending" as const),
       };
+      if (sourceUrl) result.sourceUrl = sourceUrl;
+      return result;
     }),
   };
 
