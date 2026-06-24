@@ -708,7 +708,9 @@ function formatLogLine(entry: DownloadLog): string {
 
 async function loadLogsTab(): Promise<void> {
   const container = $("dl-logs");
-  container.replaceChildren(el("p", { className: "default-note", textContent: "Loading…" }));
+  if (container.children.length === 0) {
+    container.replaceChildren(el("p", { className: "default-note", textContent: "Loading…" }));
+  }
   try {
     const raw = await browser.storage.local.get({ downloadLogs: [] });
     const logs = (raw["downloadLogs"] as DownloadLog[] | undefined) ?? [];
@@ -728,7 +730,9 @@ async function loadLogsTab(): Promise<void> {
 
 async function loadHistoryTab(): Promise<void> {
   const jobsContainer = $("dl-jobs");
-  jobsContainer.replaceChildren(el("p", { className: "default-note", textContent: "Loading…" }));
+  if (jobsContainer.children.length === 0) {
+    jobsContainer.replaceChildren(el("p", { className: "default-note", textContent: "Loading…" }));
+  }
   try {
     const res = (await browser.runtime.sendMessage({ type: "MD_LIST_JOBS" })) as MDListJobsResponse;
     jobsContainer.replaceChildren();
