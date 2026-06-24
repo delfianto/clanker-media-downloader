@@ -18,7 +18,7 @@ import {
 import { resolveItem } from "./item-resolver";
 import { jobActivityBegin, jobActivityEnd } from "./download-ui";
 import { appendLog } from "./logger";
-import { isMediaFile, isTransientError } from "./media-util";
+import { isMediaFile, isTransientError, classifyFailure } from "./media-util";
 import { sanitizeFilename } from "./sanitize";
 import { DEFAULT_SETTINGS } from "../settings/schema";
 import { getModel } from "../hosts/index";
@@ -277,7 +277,7 @@ async function runQueue(
       } catch (resolveErr) {
         void appendLog(
           "error",
-          `Resolve failed for item ${idx + 1}: ${String(resolveErr)}`,
+          `Resolve failed (${classifyFailure(resolveErr)}) for item ${idx + 1}: ${String(resolveErr)}`,
           job.jobId,
         );
         job.failedCount++;
@@ -377,7 +377,11 @@ async function runQueue(
           }
           void appendLog("debug", `Downloaded: ${filePath}`, job.jobId);
         } else {
-          void appendLog("error", `Download failed for ${imageUrl}: ${String(lastErr)}`, job.jobId);
+          void appendLog(
+            "error",
+            `Download failed (${classifyFailure(lastErr)}) for ${imageUrl}: ${String(lastErr)}`,
+            job.jobId,
+          );
           job.failedCount++;
           job.completedCount++;
           if (job.items?.[idx]) {

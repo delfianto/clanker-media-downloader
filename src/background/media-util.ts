@@ -30,8 +30,31 @@ export function isMediaFile(filename: string): boolean {
   return ext ? MEDIA_EXTS.has(ext) : false;
 }
 
-const RETRYABLE_ERRORS = [
+// ── Failure classification ───────────────────────────────────────────────────
+// Every download/resolve failure is one of two kinds:
+//   permanent — the file or host won't recover by retrying (removed, 403/404,
+//               disk full, unsupported host). Retrying just wastes time/backoff.
+//   ephemeral — a transient server/network blip; a retry may succeed.
+// Covers both browser.downloads interruption codes and fetch-stage errors.
+
+// Permanent — never retry. Includes our resolvers' DEAD_LINK sentinel.
+const PERMANENT_ERRORS = [
+  "DEAD_LINK", // resolver detected a removed/non-existent upload
+  "SERVER_BAD_CONTENT", // HTTP 404/410 — file gone
+  "SERVER_FORBIDDEN", // 403
+  "SERVER_UNAUTHORIZED", // 401
+  "SERVER_CERT_PROBLEM",
+  "FILE_NO_SPACE",
+  "FILE_ACCESS_DENIED",
+  "FILE_NAME_TOO_LONG",
+  "no leaf resolver", // unsupported host — won't change on retry
+];
+
+// Ephemeral — a retry might succeed.
+const EPHEMERAL_ERRORS = [
   "SERVER_FAILED",
+  "SERVER_UNREACHABLE",
+  "SERVER_NO_RANGE",
   "SERVER_CONTENT_LENGTH_MISMATCH",
   "NETWORK_FAILED",
   "NETWORK_TIMEOUT",
@@ -41,7 +64,21 @@ const RETRYABLE_ERRORS = [
   "CRASH",
 ];
 
-export function isTransientError(err: unknown): boolean {
+// Fetch-stage transients (resolveFromViewer, viewer-page GET).
+const EPHEMERAL_PATTERNS = /Failed to fetch|NetworkError|\babort/i;
+
+export type FailureKind = "ephemeral" | "permanent";
+
+export function classifyFailure(err: unknown): FailureKind {
   const msg = String(err);
-  return RETRYABLE_ERRORS.some((e) => msg.includes(e));
+  if (PERMANENT_ERRORS.some((e) => msg.includes(e))) return "permanent";
+  if (EPHEMERAL_ERRORS.some((e) => msg.includes(e))) return "ephemeral";
+  if (EPHEMERAL_PATTERNS.test(msg) || /HTTP\s+(?:5\d\d|429)/.test(msg)) return "ephemeral";
+  // Unknown → permanent: don't burn 5 retries + exponential backoff on
+  // something we can't confirm is transient. Real transients have known codes.
+  return "permanent";
+}
+
+export function isTransientError(err: unknown): boolean {
+  return classifyFailure(err) === "ephemeral";
 }

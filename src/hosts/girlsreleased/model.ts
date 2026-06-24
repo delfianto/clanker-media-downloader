@@ -280,6 +280,10 @@ export const girlsreleasedModel: HosterModel = {
     "https://*.imx.to/*",
     "https://www.imagevenue.com/*",
     "https://*.imagevenue.com/*",
+    "https://imagetwist.com/*",
+    "https://*.imagetwist.com/*",
+    "https://imagehaha.com/*",
+    "https://*.imagehaha.com/*",
   ],
   getGalleryName: async (doc: Document) => {
     // 1. Find the visible h1 (the set name)

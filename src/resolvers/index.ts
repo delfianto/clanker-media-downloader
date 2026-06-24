@@ -1,10 +1,11 @@
 import type { LeafResolver } from "./types";
 import { imxResolver } from "./imx";
 import { imagevenueResolver } from "./imagevenue";
+import { imagetwistResolver } from "./imagetwist";
 
 export type { LeafResolver };
 
-export const LEAF_RESOLVERS: LeafResolver[] = [imxResolver, imagevenueResolver];
+export const LEAF_RESOLVERS: LeafResolver[] = [imxResolver, imagevenueResolver, imagetwistResolver];
 
 export async function resolveLeaf(viewerUrl: string): Promise<{ url: string; filename?: string }> {
   const u = new URL(viewerUrl);
