@@ -32,11 +32,7 @@ let activeJobPromise = Promise.resolve();
 // concurrent IDB transactions when a crawl fires 50+ jobs simultaneously.
 let setupPromiseQueue = Promise.resolve();
 
-// Strictly-increasing creation timestamp. A crawl posts its sets as a burst, so
-// many jobs land in the same millisecond; listJobs sorts by startedAt and would
-// then break ties arbitrarily (by UUID), scrambling the History list relative to
-// the FIFO download order. Bumping by 1ms on collision keeps startedAt unique and
-// monotonic in arrival order, so the list reads top-to-bottom in run order.
+// Strictly-increasing timestamp to preserve FIFO download order in History list during crawl bursts.
 let lastStartedAt = 0;
 function nextStartedAt(): number {
   const now = Date.now();
@@ -45,10 +41,7 @@ function nextStartedAt(): number {
 }
 
 // ── Targeted tab broadcast ───────────────────────────────────────────────────
-// Tracks which content-script tab originated each job/crawl, so progress can be
-// sent to that one tab only — not every open tab via tabs.query({}). Content
-// tabs need MD_JOB_PROGRESS only for terminal states (crawl cancel + button
-// reset); running updates are options-page only (via runtime.sendMessage).
+// Tracks originating tabs to send terminal progress updates efficiently.
 const jobTabIds = new Map<string, number>();
 
 export function registerJobTab(jobId: string, tabId: number): void {
@@ -116,10 +109,7 @@ function broadcastItemUpdate(job: DownloadJob, idx: number): void {
 }
 
 async function broadcastProgressToTabs(job: DownloadJob): Promise<void> {
-  // Content tabs only need terminal-state messages (crawl cancel + button
-  // reset). Running updates are options-page only (via runtime.sendMessage
-  // above). This eliminates the tabs.query({}) + serial sendMessage-to-all
-  // storm that froze the browser during large crawls.
+  // Send only terminal-state messages to the originating tab to avoid broadcast storms.
   if (job.status === "running") return;
 
   const tabId = jobTabIds.get(job.jobId);
@@ -198,12 +188,7 @@ async function precheckDownloadUrl(url: string): Promise<void> {
       throw new Error(`HTTP ${res.status}`);
     }
 
-    // Chrome's download manager is notoriously destructive: if it downloads an
-    // image but the server returns a 200 OK HTML error page (e.g. Cloudflare
-    // block or custom 404), Chrome sniffs the HTML body, aggressively renames
-    // the file to .html, strips our custom subfolder path, dumps it into the
-    // root ~/Downloads directory, and then sometimes marks it as a SERVER_FAILED
-    // error anyway. Catching it here with a HEAD request prevents this litter.
+    // Prevent Chrome from downloading 200 OK HTML error pages and dumping them into ~/Downloads.
     const contentType = res.headers.get("content-type") || "";
     if (contentType.includes("text/html")) {
       throw new Error("Server returned HTML page instead of image (dead link or block)");
@@ -216,8 +201,7 @@ async function precheckDownloadUrl(url: string): Promise<void> {
     ) {
       throw err;
     }
-    // If fetch failed due to CORS (CDN not in host_permissions) or network disconnect,
-    // ignore the error and let Chrome's native downloader attempt it.
+    // Ignore CORS/network errors and let native downloader handle them.
   }
 }
 
@@ -273,13 +257,8 @@ async function runQueue(
   skipExisting: boolean,
 ): Promise<void> {
   if (job.subfolder && entries.length > 0) {
-    // Chromium on Linux has a severe VFS bug: concurrent downloads to a new
-    // directory trigger a mkdir race condition that causes Heavy I/O blocking
-    // (browser stutter) and causes Chrome to maliciously strip the subfolder
-    // and dump all the files into the root ~/Downloads directory instead.
-    // By synchronously pre-creating the folder with a dummy file before starting
-    // the concurrent workers, Chromium sees the directory already exists and
-    // skips the buggy mkdir race entirely.
+    // Pre-create the directory to bypass a Chromium Linux bug where concurrent
+    // downloads to a new directory trigger a mkdir race condition, dropping files into ~/Downloads.
     await createSubfolder(job.subfolder);
   }
 
@@ -344,11 +323,7 @@ async function runQueue(
       const itemSubfolder = item.subfolder ?? job.subfolder;
       const filePath = itemSubfolder ? `${itemSubfolder}/${safeFilename}` : safeFilename;
 
-      // Skip-if-exists: check the IDB [subfolder+displayName] composite index
-      // for a previously downloaded item. O(1) lookup — replaces the
-      // chrome.downloads.search approach (which won't work for LO's clear-
-      // history workflow). Catches duplicates within the same job and files
-      // from previous jobs that the job-start dedup might have missed.
+      // Skip-if-exists: O(1) IDB lookup to prevent re-downloading files that exist in history.
       const displayName = item.kind === "resolve-viewer" ? item.viewerUrl : item.imageUrl;
       if (skipExisting && displayName) {
         const existing = await findDoneItem(itemSubfolder, displayName);

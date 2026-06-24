@@ -34,10 +34,7 @@ import { getLogs, clearLogs } from "./logger";
 import { migrateJobsIfNeeded, getJobWithItems } from "./job-store";
 import { migrateLogsIfNeeded } from "./logger";
 
-// Reset the native download UI / toolbar badge to a known-good idle state. The
-// SW suppresses Chrome's download shelf only while download jobs are running
-// (see download-ui.ts) — this recovers the case where the SW died mid-crawl
-// while the UI was suppressed.
+// Reset download UI to recover from unexpected SW termination.
 initDownloadUi();
 
 // Recover any jobs that were mid-flight when the SW was last terminated.
@@ -47,11 +44,7 @@ void resumeRunningJobs();
 void migrateJobsIfNeeded();
 void migrateLogsIfNeeded();
 
-// Register declarativeNetRequest header-modification rules declared by each
-// hoster model (e.g. erome's Referer bypass). Rule IDs are derived from the
-// model's position in ALL_MODELS so they're stable across restarts. The SW
-// knows nothing about which hosters need rules or what headers they set —
-// it just reads the models.
+// Sync declarativeNetRequest rules from hoster models.
 const DNR_RULE_BASE_ID = 129258;
 
 async function setupDeclarativeRules(): Promise<void> {
@@ -158,10 +151,7 @@ browser.runtime.onMessage.addListener(
       if (sender.tab?.id)
         registerJobTab((m as Record<string, unknown>)["jobId"] as string, sender.tab.id);
 
-      // Do NOT return this Promise! Returning it tells Chrome to hold the message
-      // channel open until the job finishes. If a crawl fires 50 jobs, Chrome
-      // holds 50 message ports open for minutes/hours, which causes it to terminate
-      // the Service Worker due to port starvation/timeouts!
+      // Do not return this Promise; returning holds the message port open until completion, causing SW starvation.
       void startGalleryJob(m as unknown as MDGalleryStartRequest).catch((err: unknown) => {
         console.error("[md] gallery job failed:", err);
       });
