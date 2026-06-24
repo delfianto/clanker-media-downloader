@@ -68,3 +68,32 @@ background/gallery.ts (Service Worker)
 ```
 
 All of this happens so you can press a button and get a JPEG. Just let that sink in.
+
+---
+
+## Hacks & MV3 Absurdities
+
+Because we are forced to use the `browser.downloads` API, we are entirely at the mercy of Chrome's native download manager, which is apparently held together by duct tape and prayers. Here are the specific absurdities we actively mitigate:
+
+### The `mkdir` Race Condition (Or: Why Your Browser Becomes Slower Than a Sloth)
+If you fire off 5 concurrent downloads into a brand new, non-existent subfolder (e.g. `Clanker/MyNewGallery`), Chromium on Linux encounters a catastrophic VFS (Virtual File System) bug. 
+
+Multiple threads attempt to `mkdir` the directory simultaneously. They collide. The disk I/O blocks heavily, your entire browser stutters like it's rendering a 4k video on a toaster, and the download manager completely loses its mind. 
+
+Its "solution" to this race condition? It maliciously strips your custom subfolder path and dumps all 154 gallery images directly into your root `~/Downloads` folder. 
+
+**The Hack:** Before starting any gallery queue, the extension synchronously downloads a dummy text file (`.md-keep`) into the target subfolder, waits for the native file write to finish so the directory is *guaranteed* to exist, and then silently deletes the dummy file. Chromium sees the directory exists, skips the buggy `mkdir` race entirely, and your browser survives.
+
+### The Randomly Killed Download Process (OOM Starvation)
+In MV3, Service Workers are ephemeral. They die. Often. If you use `browser.runtime.onMessage` and return a Promise without properly resolving it, or if you hold open too many `MessagePorts` simultaneously during a massive batch download, Chrome decides your Service Worker has a memory leak.
+
+Chrome's response? It forcefully terminates the worker in the middle of your download queue. 
+
+**The Hack:** We use a `Port` keep-alive ping system that prevents the worker from sleeping while the queue is active. Furthermore, we absolutely never `return` directly from the `onMessage` handler to avoid port leakage. We handle the async work separately and use `sendResponse` explicitly. 
+
+### "Random" Files in `~/Downloads`
+Sometimes a CDN rate-limits you and returns an HTTP 200 OK... but the payload is a Cloudflare block HTML page. 
+
+Chrome's download manager sniffs the HTML body, aggressively renames the file from `.jpg` to `.html`, maliciously strips our custom subfolder path (again), and dumps it into the root `~/Downloads` directory. And then sometimes marks the download as a `SERVER_FAILED` error anyway, just to mock you.
+
+**The Hack:** The Service Worker performs an explicit `HEAD` (or `GET`) request before passing the URL to the download manager. If the `Content-Type` is `text/html`, we throw an error and abort the download *before* Chrome can touch it, preventing HTML litter in your downloads folder.
