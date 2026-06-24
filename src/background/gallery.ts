@@ -25,6 +25,18 @@ import { getModel } from "../hosts/index";
 
 let activeJobPromise: Promise<void> = Promise.resolve();
 
+// Strictly-increasing creation timestamp. A crawl posts its sets as a burst, so
+// many jobs land in the same millisecond; listJobs sorts by startedAt and would
+// then break ties arbitrarily (by UUID), scrambling the History list relative to
+// the FIFO download order. Bumping by 1ms on collision keeps startedAt unique and
+// monotonic in arrival order, so the list reads top-to-bottom in run order.
+let lastStartedAt = 0;
+function nextStartedAt(): number {
+  const now = Date.now();
+  lastStartedAt = now > lastStartedAt ? now : lastStartedAt + 1;
+  return lastStartedAt;
+}
+
 // ── Targeted tab broadcast ───────────────────────────────────────────────────
 // Tracks which content-script tab originated each job/crawl, so progress can be
 // sent to that one tab only — not every open tab via tabs.query({}). Content
@@ -402,7 +414,7 @@ export async function startGalleryJob(req: MDGalleryStartRequest): Promise<void>
     completedCount: 0,
     failedCount: 0,
     status: "running",
-    startedAt: Date.now(),
+    startedAt: nextStartedAt(),
     originalItems: req.items,
     maxParallelImg: req.maxParallelImg,
     maxParallelVid: req.maxParallelVid,
@@ -410,72 +422,82 @@ export async function startGalleryJob(req: MDGalleryStartRequest): Promise<void>
     items: [],
   };
 
-  // Dedup: for each item, check if a done item with the same [subfolder+
-  // displayName] already exists in IDB. This uses the composite index — O(1)
-  // per item instead of the old O(jobs × items) nested loop.
-  for (let i = 0; i < req.items.length; i++) {
-    const item = req.items[i];
-    if (!item) continue;
-    const displayName = item.kind === "resolve-viewer" ? item.viewerUrl : item.imageUrl;
-    const sourceUrl =
-      item.kind === "resolve-viewer" ? item.viewerUrl : (item.sourceUrl ?? item.imageUrl);
+  // Eagerly run setup — dedup against IDB, persist the job + its items, broadcast
+  // the initial state, and read settings. Kicked off immediately (NOT chained) so
+  // the job shows up in the History list right away and in arrival order. The
+  // download phase below awaits this before it runs.
+  const setup = (async () => {
+    // Dedup: for each item, check if a done item with the same [subfolder+
+    // displayName] already exists in IDB. Composite index — O(1) per item.
+    for (let i = 0; i < req.items.length; i++) {
+      const item = req.items[i];
+      if (!item) continue;
+      const displayName = item.kind === "resolve-viewer" ? item.viewerUrl : item.imageUrl;
+      const sourceUrl =
+        item.kind === "resolve-viewer" ? item.viewerUrl : (item.sourceUrl ?? item.imageUrl);
 
-    const existing = await findDoneItem(req.subfolder, displayName);
-    const result: DownloadJobItem = {
-      displayName,
-      filename: existing ? existing.filename : item.filename,
-      status: existing ? ("done" as const) : ("pending" as const),
-    };
-    if (sourceUrl) result.sourceUrl = sourceUrl;
-    if (job.items) {
-      job.items[i] = result;
-    } else {
-      job.items = [result];
+      const existing = await findDoneItem(req.subfolder, displayName);
+      const result: DownloadJobItem = {
+        displayName,
+        filename: existing ? existing.filename : item.filename,
+        status: existing ? ("done" as const) : ("pending" as const),
+      };
+      if (sourceUrl) result.sourceUrl = sourceUrl;
+      if (job.items) {
+        job.items[i] = result;
+      } else {
+        job.items = [result];
+      }
     }
-  }
 
-  job.completedCount = job.items?.filter((item) => item.status === "done").length ?? 0;
+    job.completedCount = job.items?.filter((item) => item.status === "done").length ?? 0;
 
-  await upsertJob(job);
-  await insertJobItems(job);
-  broadcastJobStart(job);
+    await upsertJob(job);
+    await insertJobItems(job);
+    broadcastJobStart(job);
 
-  // Partition items by media type so videos (large, CDN-throttled) get their
-  // own lower-parallelism queue while images stay aggressive.
-  const entries = req.items.map((item, i) => ({ item, origIdx: i }));
-  const mediaEntries = entries.filter((e) => isMediaFile(e.item.filename));
-  const imageEntries = entries.filter((e) => !isMediaFile(e.item.filename));
+    // Partition items by media type so videos (large, CDN-throttled) get their
+    // own lower-parallelism queue while images stay aggressive.
+    const entries = req.items.map((item, i) => ({ item, origIdx: i }));
+    const mediaEntries = entries.filter((e) => isMediaFile(e.item.filename));
+    const imageEntries = entries.filter((e) => !isMediaFile(e.item.filename));
 
-  void appendLog(
-    "info",
-    `Gallery job started [${req.hosterId}]: ${req.items.length} items (${imageEntries.length} img, ${mediaEntries.length} media) → "${req.subfolder || "(no folder)"}", parallel=${req.maxParallelImg}/${req.maxParallelVid}`,
-    job.jobId,
-  );
+    void appendLog(
+      "info",
+      `Gallery job started [${req.hosterId}]: ${req.items.length} items (${imageEntries.length} img, ${mediaEntries.length} media) → "${req.subfolder || "(no folder)"}", parallel=${req.maxParallelImg}/${req.maxParallelVid}`,
+      job.jobId,
+    );
 
-  // Read maxDownloadRetries + skipExistingFiles from settings
-  const stored = await browser.storage.local.get({
-    maxDownloadRetries: DEFAULT_SETTINGS.maxDownloadRetries,
-    skipExistingFiles: DEFAULT_SETTINGS.skipExistingFiles,
-  });
-  const maxRetries =
-    typeof stored["maxDownloadRetries"] === "number"
-      ? stored["maxDownloadRetries"]
-      : DEFAULT_SETTINGS.maxDownloadRetries;
-  const skipExisting =
-    typeof stored["skipExistingFiles"] === "boolean"
-      ? stored["skipExistingFiles"]
-      : DEFAULT_SETTINGS.skipExistingFiles;
+    const stored = await browser.storage.local.get({
+      maxDownloadRetries: DEFAULT_SETTINGS.maxDownloadRetries,
+      skipExistingFiles: DEFAULT_SETTINGS.skipExistingFiles,
+    });
+    const maxRetries =
+      typeof stored["maxDownloadRetries"] === "number"
+        ? stored["maxDownloadRetries"]
+        : DEFAULT_SETTINGS.maxDownloadRetries;
+    const skipExisting =
+      typeof stored["skipExistingFiles"] === "boolean"
+        ? stored["skipExistingFiles"]
+        : DEFAULT_SETTINGS.skipExistingFiles;
 
-  // Mark download activity active: suppresses Chrome's native download UI (which
-  // janks the browser when thousands of files download) and bumps the toolbar
-  // badge. Paired with jobActivityEnd() in the .finally below — placed here, not
-  // earlier, so a throw during setup can't leak the counter (the whole chain
-  // incl. its .finally is created synchronously from this point on).
+    return { imageEntries, mediaEntries, maxRetries, skipExisting };
+  })();
+
+  // Mark download activity active: suppresses Chrome's native download UI and
+  // bumps the toolbar badge. Paired with jobActivityEnd() in the .finally below.
   jobActivityBegin();
 
-  // Chain the execution of this job to serialize downloading.
+  // Reserve this job's place in the download queue SYNCHRONOUSLY — before any
+  // await — so jobs download in the exact order their MD_GALLERY_START arrived
+  // (which the crawl posts in list/sort order), NOT in the order their async
+  // setup happens to finish. Setup time scales with item count + IDB latency, so
+  // chaining after it let a small late job jump ahead of a big early one. This is
+  // the true-FIFO fix: topmost in the list runs first.
   const myTurn = activeJobPromise
     .then(async () => {
+      const { imageEntries, mediaEntries, maxRetries, skipExisting } = await setup;
+
       // Read latest status to verify it wasn't cancelled while waiting in the queue
       const latestJob = await getJob(job.jobId);
       // A job that's been cleared from storage is just as dead as one marked
@@ -554,7 +576,7 @@ export async function startCrawlJob(req: {
     completedCount: 0,
     failedCount: 0,
     status: "running",
-    startedAt: Date.now(),
+    startedAt: nextStartedAt(),
     isCrawl: true,
   };
   await upsertJob(job);
