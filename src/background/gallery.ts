@@ -186,22 +186,55 @@ async function downloadViaOffscreen(url: string, filePath: string, jobId?: strin
   }
 }
 
+async function precheckDownloadUrl(url: string): Promise<void> {
+  if (!url.startsWith("http")) return;
+
+  try {
+    const res = await fetch(url, { method: "HEAD", credentials: "include" });
+    if (res.status === 405) return; // Method Not Allowed, fallback to native
+
+    // If it's a 4xx or 5xx, throw early so we don't pollute the Chrome Downloads UI
+    if (!res.ok) {
+      throw new Error(`HTTP ${res.status}`);
+    }
+
+    // Chrome's download manager is notoriously destructive: if it downloads an
+    // image but the server returns a 200 OK HTML error page (e.g. Cloudflare
+    // block or custom 404), Chrome sniffs the HTML body, aggressively renames
+    // the file to .html, strips our custom subfolder path, dumps it into the
+    // root ~/Downloads directory, and then sometimes marks it as a SERVER_FAILED
+    // error anyway. Catching it here with a HEAD request prevents this litter.
+    const contentType = res.headers.get("content-type") || "";
+    if (contentType.includes("text/html")) {
+      throw new Error("Server returned HTML page instead of image (dead link or block)");
+    }
+  } catch (err) {
+    // If the error was explicitly thrown by our checks above, rethrow it.
+    if (
+      err instanceof Error &&
+      (err.message.startsWith("HTTP ") || err.message.includes("HTML page"))
+    ) {
+      throw err;
+    }
+    // If fetch failed due to CORS (CDN not in host_permissions) or network disconnect,
+    // ignore the error and let Chrome's native downloader attempt it.
+  }
+}
+
 export async function attemptDownload(
   url: string,
   filePath: string,
   jobId?: string,
   hosterId?: string,
 ): Promise<void> {
-  // Check the model's offscreenForMediaFiles flag instead of hardcoding the
-  // hoster's domain. The hosterId is passed from runQueue (gallery downloads);
-  // single-download callers don't pass it, but offscreen-only hosters (erome)
-  // don't have single-download pages anyway.
   if (hosterId) {
     const model = getModel(hosterId as any);
     if (model?.galleryConfig?.offscreenForMediaFiles && isMediaFile(filePath)) {
       return downloadViaOffscreen(url, filePath, jobId);
     }
   }
+
+  await precheckDownloadUrl(url);
 
   const downloadId = await browser.downloads.download({
     url,
