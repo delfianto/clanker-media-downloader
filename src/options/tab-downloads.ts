@@ -16,10 +16,10 @@ export function renderDownloadsSettings(
     className: "narrow",
     value: String(settings.maxParallelImg),
     min: "1",
-    max: "10",
+    max: "20",
   } as Partial<HTMLInputElement>);
   parallelInput.addEventListener("change", () => {
-    const v = Math.min(10, Math.max(1, Number(parallelInput.value) || 5));
+    const v = Math.min(20, Math.max(1, Number(parallelInput.value) || 5));
     parallelInput.value = String(v);
     settings.maxParallelImg = v;
     persistSoon();
@@ -117,7 +117,7 @@ export function renderDownloadsSettings(
     el("div", { className: "settings-field" }, [
       el("div", {}, [
         el("div", { className: "settings-label", textContent: "Max parallel — images" }),
-        el("div", { className: "settings-hint", textContent: "1–10 image files at a time" }),
+        el("div", { className: "settings-hint", textContent: "1–20 image files at a time" }),
       ]),
       parallelInput,
     ]),

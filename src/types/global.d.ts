@@ -19,7 +19,7 @@ export type Settings = {
   hosters: Record<HosterId, HosterOverride>;
   // Gallery download settings. Required (not optional) so storage.local.get(DEFAULT_SETTINGS)
   // always fills them — no undefined footgun with exactOptionalPropertyTypes.
-  maxParallelImg: number; // 1–10; concurrent image downloads per gallery job
+  maxParallelImg: number; // 1–20; concurrent image downloads per gallery job
   maxParallelVid: number; // 1–5; concurrent video/audio downloads (CDN throttles large files)
   downloadDirectory: string; // relative download directory inside browser downloads dir; "" = none
   autoFolderPerAlbum: boolean; // if true: downloads/{directory}/{albumId}/file.ext
