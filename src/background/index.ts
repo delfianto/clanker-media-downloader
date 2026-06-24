@@ -9,17 +9,16 @@ import type {
   MDResumeJobRequest,
 } from "../types/messages";
 import { crossOriginFetchBlob } from "./fetcher";
+import { startGalleryJob, attemptDownload } from "./gallery";
 import {
-  startGalleryJob,
   listJobs,
   resumeRunningJobs,
-  attemptDownload,
   deleteJob,
   cancelJob,
   resumeJob,
   cancelAllJobs,
   resumeAllJobs,
-} from "./gallery";
+} from "./job-store";
 import { sanitizeFilename } from "./sanitize";
 
 // Recover any jobs that were mid-flight when the SW was last terminated.
@@ -118,7 +117,9 @@ browser.runtime.onMessage.addListener((msg: unknown): Promise<AnyResponse> | und
 
   if (m["type"] === "MD_RESUME_JOB" && typeof m["jobId"] === "string") {
     const req = m as unknown as MDResumeJobRequest;
-    return resumeJob(req.jobId).then((): void => {});
+    return resumeJob(req.jobId, (r) => {
+      void startGalleryJob(r);
+    }).then((): void => {});
   }
 
   if (m["type"] === "MD_STOP_ALL_JOBS") {
@@ -126,7 +127,9 @@ browser.runtime.onMessage.addListener((msg: unknown): Promise<AnyResponse> | und
   }
 
   if (m["type"] === "MD_RESUME_ALL_JOBS") {
-    return resumeAllJobs().then((): void => {});
+    return resumeAllJobs((r) => {
+      void startGalleryJob(r);
+    }).then((): void => {});
   }
 
   return undefined;
