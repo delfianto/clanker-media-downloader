@@ -16,6 +16,7 @@ const dl = browser.downloads as unknown as {
 };
 
 let activeJobs = 0;
+let keepAliveTimer: ReturnType<typeof setInterval> | undefined;
 
 function setNativeUi(enabled: boolean): void {
   if (typeof dl.setUiOptions !== "function") return;
@@ -49,6 +50,10 @@ function updateBadge(): void {
 // the SW died mid-crawl while the UI was suppressed and never got to restore it.
 export function initDownloadUi(): void {
   activeJobs = 0;
+  if (keepAliveTimer) {
+    clearInterval(keepAliveTimer);
+    keepAliveTimer = undefined;
+  }
   setNativeUi(true);
   updateBadge();
 }
@@ -56,7 +61,15 @@ export function initDownloadUi(): void {
 // A download job started running — suppress the native UI on the 0→1 edge.
 export function jobActivityBegin(): void {
   activeJobs++;
-  if (activeJobs === 1) setNativeUi(false);
+  if (activeJobs === 1) {
+    setNativeUi(false);
+    // MV3 SW idle timer is 30s. Ping an extension API every 20s to prevent
+    // Chrome from killing the SW while jobs are running but no new browser
+    // API calls have been made recently.
+    keepAliveTimer = setInterval(() => {
+      browser.runtime.getPlatformInfo().catch(() => {});
+    }, 20000);
+  }
   updateBadge();
 }
 
@@ -64,6 +77,12 @@ export function jobActivityBegin(): void {
 // edge. Safe to over-call; clamped at zero.
 export function jobActivityEnd(): void {
   if (activeJobs > 0) activeJobs--;
-  if (activeJobs === 0) setNativeUi(true);
+  if (activeJobs === 0) {
+    setNativeUi(true);
+    if (keepAliveTimer) {
+      clearInterval(keepAliveTimer);
+      keepAliveTimer = undefined;
+    }
+  }
   updateBadge();
 }
