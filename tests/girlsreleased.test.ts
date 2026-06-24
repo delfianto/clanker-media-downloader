@@ -226,7 +226,7 @@ describe("GirlsReleased Hoster Model", () => {
       };
 
       const name = girlsreleasedModel.getGalleryName!(mockDoc as unknown as Document);
-      expect(name).toBe("Femjoy/Ariel A - Sway");
+      expect(name).toBe("Femjoy/Ariel.A_Sway");
     });
 
     it("falls back to only the set title if site is not found", () => {
@@ -245,7 +245,7 @@ describe("GirlsReleased Hoster Model", () => {
       };
 
       const name = girlsreleasedModel.getGalleryName!(mockDoc as unknown as Document);
-      expect(name).toBe("Ariel A - Sway");
+      expect(name).toBe("Ariel.A.-.Sway");
     });
   });
 });

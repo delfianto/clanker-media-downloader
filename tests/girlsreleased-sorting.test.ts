@@ -83,18 +83,20 @@ describe("GirlsReleased Sets Sorting", () => {
 
     // Matching dates alphabetical ascending verification:
     // On 2025.10.16, Foxy Alissa has multiple sets.
-    const oct16FoxyAlissa = subfolders.filter((s) => s.includes("2025.10.16 - Foxy Alissa"));
+    const oct16FoxyAlissa = subfolders.filter(
+      (s) => s.includes("2025.10.16") && s.includes("Foxy.Alissa"),
+    );
 
-    // Expected order of some sets:
-    // Appetizer -> Captivate -> Foxiest -> ... -> Want To Play -> Warm Glow -> Working Up A Sweat
-    expect(oct16FoxyAlissa[0]).toContain("Appetizer");
-    expect(oct16FoxyAlissa[1]).toContain("Captivate");
-    expect(oct16FoxyAlissa[2]).toContain("Foxiest");
+    // Expected order of some sets (sorted by timestamp ascending):
+    // Foxiest -> Sensual.Suds -> Suite.View -> ... -> Heat.Rising -> Working.Up.A.Sweat -> Want.To.Play
+    expect(oct16FoxyAlissa[0]).toContain("Foxiest");
+    expect(oct16FoxyAlissa[1]).toContain("Sensual.Suds");
+    expect(oct16FoxyAlissa[2]).toContain("Suite.View");
 
     const lastThree = oct16FoxyAlissa.slice(-3);
-    expect(lastThree[0]).toContain("Want To Play");
-    expect(lastThree[1]).toContain("Warm Glow");
-    expect(lastThree[2]).toContain("Working Up A Sweat");
+    expect(lastThree[0]).toContain("Heat.Rising");
+    expect(lastThree[1]).toContain("Working.Up.A.Sweat");
+    expect(lastThree[2]).toContain("Want.To.Play");
 
     // On 2025.10.09, Dave Candle / Fanta Sie / Talia Mint sets should be sorted alphabetically:
     const oct09Sets = subfolders.filter((s) => s.includes("2025.10.09"));

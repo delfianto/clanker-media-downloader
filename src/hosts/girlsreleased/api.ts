@@ -113,25 +113,28 @@ function parsePostedAt(raw: unknown): number | null {
   return secs;
 }
 
-// "YYYY.MM.DD" in UTC (deterministic regardless of the user's timezone),
-// or "" when there is no usable timestamp.
-function formatPostedDate(postedAt: number | null): string {
+function formatPostedTimestamp(postedAt: number | null): string {
   if (postedAt === null) return "";
   const d = new Date(postedAt * 1000);
   const p = (n: number) => String(n).padStart(2, "0");
-  return `${d.getUTCFullYear()}.${p(d.getUTCMonth() + 1)}.${p(d.getUTCDate())}`;
+  const date = `${d.getUTCFullYear()}.${p(d.getUTCMonth() + 1)}.${p(d.getUTCDate())}`;
+  const time = `${p(d.getUTCHours())}.${p(d.getUTCMinutes())}.${p(d.getUTCSeconds())}`;
+  return `${date}_${time}`;
 }
 
-function cleanSegment(s: string): string {
+function dotify(s: string): string {
   return s
     .trim()
-    .replace(/[/\\]+/g, " - ")
-    .replace(/\s+/g, " ")
-    .replace(/^[\s\-.]+|[\s\-.]+$/g, "");
+    .replace(/[\s/\\]+/g, ".")
+    .replace(/\.{2,}/g, ".")
+    .replace(/^\.+|\.+$/g, "");
 }
 
-// Build the per-set folder path: "Studio/Date - Model - Gallery Name"
-// Timestamp and model are omitted when unavailable, e.g. "Studio/Gallery Name".
+// Build the per-set folder path. With a posted timestamp:
+//   "Studio/YYYY.MM.DD_HH.MM.SS_Model.Name_Gallery.Name"
+// Timestamp and model are omitted when unavailable, e.g. "Studio/Gallery.Name".
+// The timestamp disambiguates same-model + same-title sets that would otherwise
+// collide into one folder and clobber each other.
 export function deriveGalleryName(
   site: string,
   model: string,
@@ -156,12 +159,9 @@ export function deriveGalleryName(
     galleryName = galleryName.replace(rxSite, "");
   }
 
-  const cleanedModel = cleanSegment(model);
-  const cleanedGallery = cleanSegment(galleryName);
-  const datePart = formatPostedDate(postedAt);
-
-  // We keep clean names with normal spaces (no dotify) but strip invalid chars
-  const segment = [datePart, cleanedModel, cleanedGallery].filter(Boolean).join(" - ");
+  const segment = [formatPostedTimestamp(postedAt), dotify(model), dotify(galleryName)]
+    .filter(Boolean)
+    .join("_");
 
   return studio ? `${studio}/${segment}` : segment;
 }
