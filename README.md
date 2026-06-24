@@ -72,27 +72,7 @@ Load `build/firefox/` via `about:debugging`.
 
 That's it. You're done. You now have a download button on images. Congratulations.
 
-### Gallery Downloads
 
-On any supported gallery/album page, you'll see a download button injected into the page UI. Click it. The extension:
-
-1. Collects all items (from DOM, or from `window.albumFiles` on Bunkr)
-2. Fetches additional paginated pages if they exist
-3. De-duplicates items
-4. Sends the batch to the service worker
-5. The SW resolves each item (fetch viewer page → extract CDN URL → sign if needed)
-6. Downloads run in two parallel queues — images at `maxParallelImg` (default 5), videos at `maxParallelVid` (default 1) — because CDNs throttle large parallel transfers and you end up with `SERVER_CONTENT_LENGTH_MISMATCH` errors on 2GB files
-7. Retries transient failures (`SERVER_FAILED`, `NETWORK_FAILED`, `CRASH`, `SERVER_CONTENT_LENGTH_MISMATCH`) up to 3 times with 1s/2s/4s exponential backoff
-8. Retries HTTP 502/503/504 on viewer page fetches and sign API calls
-9. Tracks actual completion via `browser.downloads.onChanged` — not just "we asked Chrome to download it"
-10. Sanitizes filenames for Windows (`\ / : * ? " < > |` and control chars → `_`)
-11. Logs everything to the Logs tab
-
-You can watch progress in the Downloads tab (History sub-tab), copy logs to clipboard for bug reports that will never be filed, and adjust parallelism settings in the Settings sub-tab.
-
-### ImageBam Filename Fallback
-
-ImageBam sometimes assigns UUIDs or absolute mojibake garbage (broken Unicode from encoding mismatches like `54­Øÿ╝­ØÖº­ØÖÜ­ØÖû 69.jpg`) as filenames. The "Use Fallback Name" toggle (on by default) detects these and replaces them with the ImageBam file ID from the URL, preserving the extension. So `54­Øÿ╝­ØÖÚ­ØÖÜ­ØÖû 69.jpg` becomes `ME2PNA7.jpg`. Normal filenames — ASCII, CJK, Japanese, Korean — pass through untouched.
 
 ### A Note On "Manual" Downloads
 

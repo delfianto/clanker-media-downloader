@@ -20,6 +20,26 @@ Each hoster's unique brand of nonsense is documented below:
 
 ---
 
+## The Gallery Pipeline
+
+On any supported gallery/album page, you'll see a download button injected into the page UI. Click it. The extension:
+
+1. Collects all items (from DOM, or from `window.albumFiles` on Bunkr)
+2. Fetches additional paginated pages if they exist
+3. De-duplicates items
+4. Sends the batch to the service worker
+5. The SW resolves each item (fetch viewer page → extract CDN URL → sign if needed)
+6. Downloads run in two parallel queues — images at `maxParallelImg` (default 5), videos at `maxParallelVid` (default 1) — because CDNs throttle large parallel transfers and you end up with `SERVER_CONTENT_LENGTH_MISMATCH` errors on 2GB files
+7. Retries transient failures (`SERVER_FAILED`, `NETWORK_FAILED`, `CRASH`, `SERVER_CONTENT_LENGTH_MISMATCH`) up to 3 times with 1s/2s/4s exponential backoff
+8. Retries HTTP 502/503/504 on viewer page fetches and sign API calls
+9. Tracks actual completion via `browser.downloads.onChanged` — not just "we asked Chrome to download it"
+10. Sanitizes filenames for Windows (`\ / : * ? " < > |` and control chars → `_`)
+11. Logs everything to the Logs tab
+
+You can watch progress in the Downloads tab (History sub-tab), copy logs to clipboard for bug reports that will never be filed, and adjust parallelism settings in the Settings sub-tab.
+
+---
+
 ## Adding More Sites
 
 Do you want to subject yourself to this architecture? Fine. Here is how you do it.
