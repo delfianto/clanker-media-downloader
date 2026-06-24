@@ -313,9 +313,11 @@ async function init(): Promise<void> {
           const existingError = row.querySelector<HTMLElement>(".item-error");
           if (delta.error) {
             if (existingError) {
-              existingError.textContent = ` (${delta.error})`;
+              existingError.textContent = ` (Error: ${delta.error})`;
             } else {
-              row.append(el("span", { className: "item-error", textContent: ` (${delta.error})` }));
+              row.append(
+                el("span", { className: "item-error", textContent: ` (Error: ${delta.error})` }),
+              );
             }
           } else if (existingError) {
             existingError.remove();
@@ -355,7 +357,9 @@ async function init(): Promise<void> {
             filenameEl,
           ]);
           if (item.error) {
-            itemEl.append(el("span", { className: "item-error", textContent: ` (${item.error})` }));
+            itemEl.append(
+              el("span", { className: "item-error", textContent: ` (Error: ${item.error})` }),
+            );
           }
           itemsContainer.append(itemEl);
         }

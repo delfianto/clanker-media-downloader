@@ -44,7 +44,7 @@ function makeItemEl(item: DownloadJobItem): HTMLElement {
     filenameEl,
   ]);
   if (item.error) {
-    itemEl.append(el("span", { className: "item-error", textContent: ` (${item.error})` }));
+    itemEl.append(el("span", { className: "item-error", textContent: ` (Error: ${item.error})` }));
   }
   return itemEl;
 }

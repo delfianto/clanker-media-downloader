@@ -82,3 +82,22 @@ export function classifyFailure(err: unknown): FailureKind {
 export function isTransientError(err: unknown): boolean {
   return classifyFailure(err) === "ephemeral";
 }
+
+// Short, user-facing label for an item's failure. The raw error (download
+// interrupt codes, HTML snippets, JSON) goes to the logs; the History UI shows
+// just this code so a failed row reads "IMAGE_NOT_FOUND" instead of a wall of text.
+export function failureLabel(err: unknown): string {
+  const msg = String(err);
+  if (
+    /DEAD_LINK|SERVER_BAD_CONTENT|not found|no match|Failed to (?:parse|extract)|extraction failed/i.test(
+      msg,
+    )
+  ) {
+    return "IMAGE_NOT_FOUND";
+  }
+  if (/SERVER_FORBIDDEN|SERVER_UNAUTHORIZED|HTTP\s+40[13]/i.test(msg)) return "ACCESS_DENIED";
+  if (/no leaf resolver/i.test(msg)) return "UNSUPPORTED_HOST";
+  if (/FILE_NO_SPACE/i.test(msg)) return "DISK_FULL";
+  if (classifyFailure(err) === "ephemeral") return "TEMPORARY_ERROR";
+  return "ERROR";
+}

@@ -18,7 +18,7 @@ import {
 import { resolveItem } from "./item-resolver";
 import { jobActivityBegin, jobActivityEnd } from "./download-ui";
 import { appendLog } from "./logger";
-import { isMediaFile, isTransientError, classifyFailure } from "./media-util";
+import { isMediaFile, isTransientError, classifyFailure, failureLabel } from "./media-util";
 import { sanitizeFilename } from "./sanitize";
 import { DEFAULT_SETTINGS } from "../settings/schema";
 import { getModel } from "../hosts/index";
@@ -284,7 +284,7 @@ async function runQueue(
         job.completedCount++;
         if (job.items?.[idx]) {
           job.items[idx].status = "error";
-          job.items[idx].error = String(resolveErr);
+          job.items[idx].error = failureLabel(resolveErr);
         }
         await upsertJobItem(job, idx);
         broadcastItemUpdate(job, idx);
@@ -386,7 +386,7 @@ async function runQueue(
           job.completedCount++;
           if (job.items?.[idx]) {
             job.items[idx].status = "error";
-            job.items[idx].error = String(lastErr);
+            job.items[idx].error = failureLabel(lastErr);
           }
         }
       } catch (outerErr) {
@@ -395,7 +395,7 @@ async function runQueue(
         job.completedCount++;
         if (job.items?.[idx]) {
           job.items[idx].status = "error";
-          job.items[idx].error = String(outerErr);
+          job.items[idx].error = failureLabel(outerErr);
         }
       }
       await upsertJobItem(job, idx);

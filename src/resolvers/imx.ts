@@ -24,7 +24,7 @@ export const imxResolver: LeafResolver = {
     const html = await res.text();
     const imgMatch = html.match(/<img[^>]+src=["'](https:\/\/[^"']+\.(?:jpg|jpeg|png))["']/i);
     if (!imgMatch?.[1]) {
-      throw new Error("Failed to parse direct image URL from imx.to POST response");
+      throw new Error(`DEAD_LINK: imx.to image not found — ${viewerUrl}`);
     }
 
     const titleMatch = html.match(/<title>(?:IMX\.to\s*\/)?\s*([^<]+)<\/title>/i);
