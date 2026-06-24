@@ -115,6 +115,16 @@ type AnyResponse =
   | { error?: string }
   | void;
 
+// Accept the keep-alive port connection from the offscreen document.
+// The port itself, along with periodic pings, keeps the SW from idling out.
+browser.runtime.onConnect.addListener((port) => {
+  if (port.name === "MD_KEEPALIVE_PORT") {
+    port.onMessage.addListener(() => {
+      // Just receiving the message resets the idle timer.
+    });
+  }
+});
+
 browser.runtime.onMessage.addListener(
   (msg: unknown, sender: { tab?: { id?: number } }): Promise<AnyResponse> | undefined => {
     const m = msg as Record<string, unknown>;

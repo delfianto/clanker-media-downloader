@@ -6,12 +6,28 @@ import type { MDOffscreenDownloadResponse } from "../types/messages";
 // webextension-polyfill types reject the legacy `sendResponse` + `return true`
 // shape, so the async work is wrapped in an IIFE whose Promise is returned.
 
-// Keep-alive ping: Offscreen document runs in a foreground-like context, so
-// its timers are never suspended by V8 (unlike Service Workers). Pinging the
-// SW every 20s completely prevents the 30-second idle termination.
-setInterval(() => {
-  browser.runtime.sendMessage({ type: "MD_KEEPALIVE_PING" }).catch(() => {});
-}, 20000);
+// Keep-alive ping via Port: A long-lived port connection is the most reliable
+// way to keep an MV3 Service Worker alive. Chrome limits port lifetimes to 5
+// minutes, so we automatically reconnect when it disconnects. We also send a
+// ping over the port every 20s to ensure the 30s idle timer is constantly reset.
+let keepAlivePort: browser.Runtime.Port | null = null;
+let pingInterval: ReturnType<typeof setInterval> | null = null;
+
+function connectKeepAlive() {
+  keepAlivePort = browser.runtime.connect({ name: "MD_KEEPALIVE_PORT" });
+
+  keepAlivePort.onDisconnect.addListener(() => {
+    if (pingInterval) clearInterval(pingInterval);
+    // Reconnect immediately if the port is closed (e.g. by Chrome's 5-minute limit)
+    setTimeout(connectKeepAlive, 100);
+  });
+
+  if (pingInterval) clearInterval(pingInterval);
+  pingInterval = setInterval(() => {
+    keepAlivePort?.postMessage("ping");
+  }, 20000);
+}
+connectKeepAlive();
 browser.runtime.onMessage.addListener(
   (msg: unknown): Promise<MDOffscreenDownloadResponse> | undefined => {
     const m = msg as Record<string, unknown>;
