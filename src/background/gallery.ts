@@ -58,125 +58,133 @@ browser.downloads.onChanged.addListener((delta) => {
 
 // ── Storage helpers ──────────────────────────────────────────────────────────
 
+let storagePromise: Promise<any> = Promise.resolve();
+
+async function runInStorageQueue<T>(fn: () => Promise<T>): Promise<T> {
+  const myTurn = storagePromise.then(fn);
+  storagePromise = myTurn.catch(() => {});
+  return myTurn;
+}
+
 async function readJobs(): Promise<DownloadJob[]> {
   const stored = await browser.storage.local.get({ [JOBS_KEY]: [] });
   return (stored[JOBS_KEY] as DownloadJob[] | undefined) ?? [];
 }
 
-async function upsertJob(job: DownloadJob): Promise<void> {
-  const jobs = await readJobs();
-  const idx = jobs.findIndex((j) => j.jobId === job.jobId);
-  if (idx >= 0) {
-    const existing = jobs[idx];
-    if (existing && existing.status === "canceled") {
-      job.status = "canceled";
+export async function upsertJob(job: DownloadJob): Promise<void> {
+  return runInStorageQueue(async () => {
+    const jobs = await readJobs();
+    const idx = jobs.findIndex((j) => j.jobId === job.jobId);
+    if (idx >= 0) {
+      const existing = jobs[idx];
+      if (existing && existing.status === "canceled") {
+        job.status = "canceled";
+      }
+      jobs[idx] = job;
+    } else {
+      jobs.unshift(job); // newest first
+      // Keep at most 50 completed jobs to avoid unbounded storage growth
+      const keep = jobs
+        .filter((j) => j.status === "running")
+        .concat(jobs.filter((j) => j.status !== "running").slice(0, 50));
+      await browser.storage.local.set({ [JOBS_KEY]: keep });
+      return;
     }
-    jobs[idx] = job;
-  } else {
-    jobs.unshift(job); // newest first
-    // Keep at most 50 completed jobs to avoid unbounded storage growth
-    const keep = jobs
-      .filter((j) => j.status === "running")
-      .concat(jobs.filter((j) => j.status !== "running").slice(0, 50));
-    await browser.storage.local.set({ [JOBS_KEY]: keep });
-    return;
-  }
-  await browser.storage.local.set({ [JOBS_KEY]: jobs });
+    await browser.storage.local.set({ [JOBS_KEY]: jobs });
+  });
 }
 
 export async function listJobs(): Promise<DownloadJob[]> {
   const jobs = await readJobs();
-  const getPostedDateString = (postedAt: number): string => {
-    const d = new Date(postedAt * 1000);
-    const p = (n: number) => String(n).padStart(2, "0");
-    return `${d.getUTCFullYear()}.${p(d.getUTCMonth() + 1)}.${p(d.getUTCDate())}`;
-  };
-  return jobs.sort((a, b) => {
-    if (a.postedAt !== undefined && b.postedAt !== undefined) {
-      const dateA = getPostedDateString(a.postedAt);
-      const dateB = getPostedDateString(b.postedAt);
-      if (dateA !== dateB) {
-        return dateB.localeCompare(dateA);
-      }
-      return a.subfolder.localeCompare(b.subfolder);
-    }
-    return b.startedAt - a.startedAt;
-  });
+  return jobs.sort((a, b) => a.startedAt - b.startedAt);
 }
 
 export async function deleteJob(jobId: string): Promise<void> {
-  const jobs = await readJobs();
-  const filtered = jobs.filter((j) => j.jobId !== jobId);
-  await browser.storage.local.set({ [JOBS_KEY]: filtered });
+  return runInStorageQueue(async () => {
+    const jobs = await readJobs();
+    const filtered = jobs.filter((j) => j.jobId !== jobId);
+    await browser.storage.local.set({ [JOBS_KEY]: filtered });
+  });
 }
 
 export async function cancelJob(jobId: string): Promise<void> {
-  const jobs = await readJobs();
-  const idx = jobs.findIndex((j) => j.jobId === jobId);
-  const job = jobs[idx];
-  if (job && job.status === "running") {
-    job.status = "canceled";
-    await upsertJob(job);
-
-    // Cancel all active downloads in browser for this job
-    for (const [downloadId, pending] of pendingDownloads.entries()) {
-      if (pending.jobId === jobId) {
-        browser.downloads.cancel(downloadId).catch(() => {});
-      }
-    }
-
-    broadcastProgress(job);
-    void appendLog("warn", "Job cancelled by user", jobId);
-  }
-}
-
-export async function cancelAllJobs(): Promise<void> {
-  const jobs = await readJobs();
-  let changed = false;
-  for (const job of jobs) {
-    if (job.status === "running") {
+  return runInStorageQueue(async () => {
+    const jobs = await readJobs();
+    const idx = jobs.findIndex((j) => j.jobId === jobId);
+    const job = jobs[idx];
+    if (job && job.status === "running") {
       job.status = "canceled";
-      changed = true;
+      jobs[idx] = job;
+      await browser.storage.local.set({ [JOBS_KEY]: jobs });
 
       // Cancel all active downloads in browser for this job
       for (const [downloadId, pending] of pendingDownloads.entries()) {
-        if (pending.jobId === job.jobId) {
+        if (pending.jobId === jobId) {
           browser.downloads.cancel(downloadId).catch(() => {});
         }
       }
+
       broadcastProgress(job);
-      void appendLog("warn", "Job cancelled by user (global stop)", job.jobId);
+      void appendLog("warn", "Job cancelled by user", jobId);
     }
-  }
-  if (changed) {
-    await browser.storage.local.set({ [JOBS_KEY]: jobs });
-  }
+  });
+}
+
+export async function cancelAllJobs(): Promise<void> {
+  return runInStorageQueue(async () => {
+    const jobs = await readJobs();
+    let changed = false;
+    for (const job of jobs) {
+      if (job.status === "running") {
+        job.status = "canceled";
+        changed = true;
+
+        // Cancel all active downloads in browser for this job
+        for (const [downloadId, pending] of pendingDownloads.entries()) {
+          if (pending.jobId === job.jobId) {
+            browser.downloads.cancel(downloadId).catch(() => {});
+          }
+        }
+        broadcastProgress(job);
+        void appendLog("warn", "Job cancelled by user (global stop)", job.jobId);
+      }
+    }
+    if (changed) {
+      await browser.storage.local.set({ [JOBS_KEY]: jobs });
+    }
+  });
 }
 
 export async function resumeJob(jobId: string): Promise<void> {
-  const jobs = await readJobs();
-  const job = jobs.find((j) => j.jobId === jobId);
-  if (job && (job.status === "canceled" || job.status === "error")) {
-    const req: MDGalleryStartRequest = {
-      type: "MD_GALLERY_START",
-      jobId: job.jobId,
-      hosterId: job.hosterId,
-      subfolder: job.subfolder,
-      items: job.originalItems || [],
-      maxParallelImg: job.maxParallelImg ?? DEFAULT_SETTINGS.maxParallelImg,
-      maxParallelVid: job.maxParallelVid ?? DEFAULT_SETTINGS.maxParallelVid,
-      postedAt: job.postedAt,
-    };
+  return runInStorageQueue(async () => {
+    const jobs = await readJobs();
+    const idx = jobs.findIndex((j) => j.jobId === jobId);
+    const job = jobs[idx];
+    if (job && (job.status === "canceled" || job.status === "error")) {
+      const req: MDGalleryStartRequest = {
+        type: "MD_GALLERY_START",
+        jobId: job.jobId,
+        hosterId: job.hosterId,
+        subfolder: job.subfolder,
+        items: job.originalItems || [],
+        maxParallelImg: job.maxParallelImg ?? DEFAULT_SETTINGS.maxParallelImg,
+        maxParallelVid: job.maxParallelVid ?? DEFAULT_SETTINGS.maxParallelVid,
+        postedAt: job.postedAt,
+      };
 
-    job.status = "running";
-    job.startedAt = Date.now(); // reset started time so it's fresh
-    await upsertJob(job);
-    broadcastProgress(job);
+      job.status = "running";
+      job.startedAt = Date.now(); // reset started time so it's fresh
+      jobs[idx] = job;
+      await browser.storage.local.set({ [JOBS_KEY]: jobs });
+      broadcastProgress(job);
 
-    void startGalleryJob(req).catch((err) => {
-      console.error(`[md] failed to resume job ${jobId}:`, err);
-    });
-  }
+      setTimeout(() => {
+        void startGalleryJob(req).catch((err) => {
+          console.error(`[md] failed to resume job ${jobId}:`, err);
+        });
+      }, 0);
+    }
+  });
 }
 
 export async function resumeAllJobs(): Promise<void> {
@@ -706,15 +714,21 @@ export async function startGalleryJob(req: MDGalleryStartRequest): Promise<void>
 
 // Called at SW startup to recover any jobs that were interrupted by SW termination.
 export async function resumeRunningJobs(): Promise<void> {
-  const jobs = await readJobs();
-  for (const job of jobs) {
-    if (job.status === "running") {
-      job.status = "error";
-      await upsertJob(job);
-      broadcastProgress(job);
-      void appendLog("warn", "Job marked error: SW restarted mid-run", job.jobId);
+  return runInStorageQueue(async () => {
+    const jobs = await readJobs();
+    let changed = false;
+    for (const job of jobs) {
+      if (job.status === "running") {
+        job.status = "error";
+        changed = true;
+        broadcastProgress(job);
+        void appendLog("warn", "Job marked error: SW restarted mid-run", job.jobId);
+      }
     }
-  }
+    if (changed) {
+      await browser.storage.local.set({ [JOBS_KEY]: jobs });
+    }
+  });
 }
 
 async function broadcastProgressToTabs(job: DownloadJob): Promise<void> {
