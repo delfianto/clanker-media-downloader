@@ -52,6 +52,42 @@ describe("parseSet", () => {
     });
   });
 
+  it("parses a full set in version 0.2 format", () => {
+    const parsed = parseSet({
+      status: 0,
+      set: {
+        name: "Stranden",
+        url: null,
+        date: TS_2020,
+        site: "errotica-archives.com",
+        models: [[5208, "Deni"]],
+        id: "147671",
+        images: [
+          [0, 0, 0, "https://imx.to/i/abc", "https://imx.to/u/t/x/abc.jpg", "img_001.jpg"],
+          [
+            0,
+            0,
+            0,
+            "https://imagevenue.com/xyz",
+            "https://imagevenue.com/t/xyz.jpg",
+            "img_002.jpg",
+          ],
+        ],
+      },
+    });
+    expect(parsed).not.toBeNull();
+    expect(parsed?.name).toBe("Stranden");
+    expect(parsed?.site).toBe("errotica-archives.com");
+    expect(parsed?.model).toBe("Deni");
+    expect(parsed?.postedAt).toBe(TS_2020);
+    expect(parsed?.files).toHaveLength(2);
+    expect(parsed?.files[0]).toEqual({
+      viewerUrl: "https://imx.to/i/abc",
+      thumbnailUrl: "https://imx.to/u/t/x/abc.jpg",
+      filename: "img_001.jpg",
+    });
+  });
+
   it("yields postedAt = null for an absent / null / implausible date slot", () => {
     expect(parseSet(setWith(null))?.postedAt).toBeNull();
     expect(parseSet(setWith(0))?.postedAt).toBeNull(); // epoch, before the 2000 floor

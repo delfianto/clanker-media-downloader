@@ -27,24 +27,40 @@ export type ParsedSet = {
 export function parseSet(json: unknown): ParsedSet | null {
   if (!json || typeof json !== "object") return null;
   const data = json as { set?: unknown };
-  const setArray = data.set;
-  // Need at least the files array (index 4); models (index 5) is optional — a
-  // set with no assigned model must still resolve rather than be dropped.
-  if (!Array.isArray(setArray) || setArray.length < 5) {
-    return null;
+  const setVal = data.set;
+  if (!setVal || typeof setVal !== "object") return null;
+
+  let name = "";
+  let site = "";
+  let model = "";
+  let postedAt: number | null = null;
+  let filesArray: unknown = null;
+
+  if (Array.isArray(setVal)) {
+    // Version 0.3 (array format)
+    if (setVal.length < 5) return null;
+    name = String(setVal[1] || "");
+    postedAt = parsePostedAt(setVal[2]);
+    site = String(setVal[3] || "");
+    filesArray = setVal[4];
+    const models = setVal[5];
+    model =
+      Array.isArray(models) && models[0] && Array.isArray(models[0]) && models[0][1]
+        ? String(models[0][1])
+        : "";
+  } else {
+    // Version 0.2 (object format)
+    const setObj = setVal as Record<string, unknown>;
+    name = String(setObj["name"] || "");
+    site = String(setObj["site"] || "");
+    postedAt = parsePostedAt(setObj["date"]);
+    filesArray = setObj["images"];
+    const models = setObj["models"];
+    model =
+      Array.isArray(models) && models[0] && Array.isArray(models[0]) && models[0][1]
+        ? String(models[0][1])
+        : "";
   }
-
-  const name = String(setArray[1] || "");
-  const site = String(setArray[3] || "");
-  const filesArray = setArray[4];
-  const models = setArray[5];
-
-  const model =
-    Array.isArray(models) && models[0] && Array.isArray(models[0]) && models[0][1]
-      ? String(models[0][1])
-      : "";
-
-  const postedAt = parsePostedAt(setArray[2]);
 
   if (!Array.isArray(filesArray)) {
     return null;
@@ -52,9 +68,11 @@ export function parseSet(json: unknown): ParsedSet | null {
 
   const files: { viewerUrl: string; thumbnailUrl: string; filename: string }[] = [];
   for (const file of filesArray) {
+    if (!Array.isArray(file)) continue;
+
     // Need viewerUrl (3) + thumbnailUrl (4); originalFilename (5) is optional
     // (filename falls back to the viewer-URL slug below).
-    if (!Array.isArray(file) || file.length < 5) {
+    if (file.length < 5) {
       continue;
     }
     const viewerUrl = String(file[3] || "");

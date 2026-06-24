@@ -292,7 +292,7 @@ export function runGalleryAdapter(
                 const setId = setIdMatch?.[1];
                 if (!setId) return;
 
-                const res = await fetch(`/api/0.3/set/${setId}`);
+                const res = await fetch(`/api/0.2/set/${setId}`);
                 if (!res.ok) throw new Error(`HTTP ${res.status}`);
                 const data = await res.json();
 
