@@ -2,6 +2,8 @@ import type { MDConfig } from "../../types/global";
 import type { GalleryConfig, HosterModel } from "../../types/hoster";
 import type { GalleryJobItem, MDGalleryStartRequest } from "../../types/messages";
 import type { GalleryCtx } from "./gallery-ui";
+import { thumbnailToFull } from "../../resolvers/index";
+import { parseSet, deriveGalleryName } from "../../hosts/girlsreleased/api";
 
 import { sanitizeFilename } from "../../background/sanitize";
 
@@ -294,50 +296,26 @@ export function runGalleryAdapter(
                 if (!res.ok) throw new Error(`HTTP ${res.status}`);
                 const data = await res.json();
 
-                const setArray = data?.set;
-                if (!Array.isArray(setArray)) return;
+                const parsed = parseSet(data);
+                if (!parsed) return;
 
-                const setName = setArray[1] || "";
-                const siteName = setArray[3] || "";
-                const filesArray = setArray[4] || [];
-                const models = setArray[5];
-                const modelName = Array.isArray(models) && models[0] ? models[0][1] : "";
-
-                let cleanSite = siteName.replace(/\.[a-z]{2,6}$/i, "");
-                cleanSite = cleanSite.charAt(0).toUpperCase() + cleanSite.slice(1);
-
-                const cleanSetName = setName.replace(/\s*\/\s*/g, " - ");
-                const detectedSetName = modelName
-                  ? `${cleanSite}/${modelName} - ${cleanSetName}`
-                  : `${cleanSite}/${cleanSetName}`;
-
+                const detectedSetName = deriveGalleryName(parsed.site, parsed.model, parsed.name);
                 const setSubfolder = detectedSetName ? buildSubfolder(detectedSetName, config) : "";
 
-                for (const file of filesArray) {
-                  if (!Array.isArray(file) || file.length < 6) continue;
-                  const viewerUrl = file[3] as string;
-                  const thumbnailUrl = (file[4] as string) || "";
-                  const originalFilename = (file[5] as string) || "";
-                  if (!viewerUrl && !thumbnailUrl) continue;
-
-                  const filename = originalFilename || viewerUrl?.split("/").at(-1) || "file";
-
-                  // If we have an imx.to thumbnail, derive the full-res URL directly
-                  // by replacing /u/t/ (thumbnail) with /u/i/ (full image).
-                  // This skips both the GET and POST to imx.to entirely.
-                  if (thumbnailUrl.includes("/u/t/")) {
+                for (const file of parsed.files) {
+                  const fullUrl = thumbnailToFull(file.thumbnailUrl);
+                  if (fullUrl) {
                     expandedItems.push({
                       kind: "resolved",
-                      imageUrl: thumbnailUrl.replace("/u/t/", "/u/i/"),
-                      filename,
+                      imageUrl: fullUrl,
+                      filename: file.filename,
                       subfolder: setSubfolder,
                     });
                   } else {
                     expandedItems.push({
                       kind: "resolve-viewer",
-                      viewerUrl,
-                      extractor: "continuebutton",
-                      filename,
+                      viewerUrl: file.viewerUrl,
+                      filename: file.filename,
                       subfolder: setSubfolder,
                     });
                   }

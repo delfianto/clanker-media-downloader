@@ -53,7 +53,7 @@ export type GalleryJobItem =
   | {
       kind: "resolve-viewer";
       viewerUrl: string;
-      extractor: string;
+      extractor?: string;
       filename: string;
       subfolder?: string;
     };

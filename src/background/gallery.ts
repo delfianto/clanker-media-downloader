@@ -128,17 +128,27 @@ async function fetchWithRetry(
 
 // Resolve a gallery item to a downloadable URL. The flow:
 //   1. For "resolved" items, the URL is already known.
-//   2. For "resolve-viewer" items, fetch the viewer page HTML.
-//   3. If the model provides extractFromViewer, call it (owns all hoster-specific
+//   2. If the model provides resolveFromViewer, let it handle the resolution (no framework GET).
+//   3. Otherwise, for "resolve-viewer" items, fetch the viewer page HTML.
+//   4. If the model provides extractFromViewer, call it (owns all hoster-specific
 //      parsing: regex, <source> fallbacks, maintenance detection, filename).
-//   4. Otherwise, use the item's regex extractor (generic fallback).
-//   5. If the model provides resolveUrl, call it (e.g. bunkr's sign API).
-//   6. Otherwise, return the raw URL directly.
+//   5. Otherwise, use the item's regex extractor (generic fallback).
+//   6. If the model provides resolveUrl, call it (e.g. bunkr's sign API).
+//   7. Otherwise, return the raw URL directly.
 async function resolveItem(item: GalleryJobItem, jobId: string, hosterId: string): Promise<string> {
   if (item.kind === "resolved") return item.imageUrl;
 
   const model = getModel(hosterId as never);
   const gc = model?.galleryConfig;
+
+  // Self-resolving hosts own their fetching — no wasted framework GET.
+  if (gc?.resolveFromViewer) {
+    const resolved = await gc.resolveFromViewer(item.viewerUrl);
+    if (resolved.filename) {
+      item.filename = resolved.filename;
+    }
+    return resolved.url;
+  }
 
   void appendLog("debug", `Fetching viewer: ${item.viewerUrl}`, jobId);
   const { text } = await fetchWithRetry(item.viewerUrl, jobId, "viewer page");
@@ -156,7 +166,7 @@ async function resolveItem(item: GalleryJobItem, jobId: string, hosterId: string
   }
 
   // Generic fallback: regex extractor on the HTML.
-  if (!rawUrl) {
+  if (!rawUrl && item.extractor) {
     const match = new RegExp(item.extractor).exec(text);
     if (match?.[1]) {
       rawUrl = match[1].replace(/\\/g, "");
@@ -167,14 +177,17 @@ async function resolveItem(item: GalleryJobItem, jobId: string, hosterId: string
     item.filename = filenameOverride;
   }
 
-  // A model's resolveUrl is the source of truth when present, in two shapes:
-  //   • with extractFromViewer (bunkr): it signs the already-extracted rawUrl,
-  //     so a missing rawUrl means extraction failed → fall through to the error.
-  //   • without extractFromViewer (girlsreleased): it derives the URL from the
-  //     viewer page itself (imx.to's POST interstitial), so rawUrl is absent.
-  if (gc?.resolveUrl && (rawUrl || !gc.extractFromViewer)) {
-    if (rawUrl) void appendLog("debug", `Resolving URL: ${rawUrl}`, jobId);
-    const resolved = await gc.resolveUrl(rawUrl ?? "", item.viewerUrl);
+  if (gc?.resolveUrl) {
+    if (!rawUrl) {
+      void appendLog(
+        "error",
+        `Extraction failed prior to resolveUrl for ${item.viewerUrl} (HTML snippet: ${text.slice(0, 300).replace(/\s+/g, " ")})`,
+        jobId,
+      );
+      throw new Error(`extraction failed prior to resolveUrl for ${item.viewerUrl}`);
+    }
+    void appendLog("debug", `Resolving URL: ${rawUrl}`, jobId);
+    const resolved = await gc.resolveUrl(rawUrl, item.viewerUrl);
     if (typeof resolved === "string") {
       return resolved;
     }

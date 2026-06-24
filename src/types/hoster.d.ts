@@ -72,6 +72,12 @@ export type ResolveUrl = (
   viewerUrl?: string,
 ) => Promise<string | { url: string; filename?: string }>;
 
+// A resolve-viewer item whose URL must be derived by the host itself (it fetches
+// the viewer page however it needs to — POST interstitial, credentialed GET, etc.).
+// When present, the framework does NOT pre-fetch the viewer page; this hook is the
+// sole authority. Mutually exclusive with extractFromViewer in practice.
+export type ResolveFromViewer = (viewerUrl: string) => Promise<{ url: string; filename?: string }>;
+
 export type GalleryConfig = {
   galleryMatches: string[]; // manifest content_scripts matches for gallery pages
   // imagebam only: selector PRESENT on viewer pages, ABSENT on gallery pages.
@@ -91,6 +97,7 @@ export type GalleryConfig = {
   // Optional SW-side hooks (see type docs above).
   extractFromViewer?: ExtractFromViewer;
   resolveUrl?: ResolveUrl;
+  resolveFromViewer?: ResolveFromViewer;
   // Optional: test whether a gallery item's filename is "bizarre" (UUID,
   // mojibake, etc.). When the user enables "Use Fallback Name" for this
   // hoster, items whose filename matches this test use the file ID from the

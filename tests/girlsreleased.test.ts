@@ -1,5 +1,6 @@
 import { describe, it, expect, mock } from "bun:test";
 import { girlsreleasedModel } from "../src/hosts/girlsreleased/model";
+import { resolveLeaf, thumbnailToFull } from "../src/resolvers/index";
 
 describe("GirlsReleased Hoster Model", () => {
   it("has correct configuration properties", () => {
@@ -8,35 +9,33 @@ describe("GirlsReleased Hoster Model", () => {
     expect(girlsreleasedModel.galleryConfig?.galleryMatches).toContain(
       "https://girlsreleased.com/set/*",
     );
+    expect(girlsreleasedModel.galleryConfig?.resolveFromViewer).toBeDefined();
   });
 
   describe("collectAllItems (collectGirlsreleasedItems)", () => {
     const collectAllItems = girlsreleasedModel.galleryConfig?.collectAllItems;
     expect(collectAllItems).toBeDefined();
 
-    it("extracts imx.to links from anchors", () => {
-      const mockAnchor = {
-        href: "https://imx.to/i/6r3hhr",
-      };
-
-      const mockScope = {
-        querySelectorAll: (selector: string) => {
-          if (selector === "a") {
-            return [mockAnchor];
-          }
-          return [];
+    it("emits a single self-referential item on set pages to trigger set expansion", () => {
+      const originalWindow = global.window;
+      global.window = {
+        location: {
+          href: "https://girlsreleased.com/set/154616",
+          pathname: "/set/154616",
         },
-        querySelector: () => ({ textContent: "Test Album" }),
-      };
+      } as any;
 
-      const items = collectAllItems!(mockScope as unknown as Document);
-      expect(items).toHaveLength(1);
-      expect(items[0]).toEqual({
-        kind: "resolve-viewer",
-        viewerUrl: "https://imx.to/i/6r3hhr",
-        extractor: "continuebutton",
-        filename: "test_album_001",
-      });
+      try {
+        const items = collectAllItems!();
+        expect(items).toHaveLength(1);
+        expect(items[0]).toEqual({
+          kind: "resolve-viewer",
+          viewerUrl: "https://girlsreleased.com/set/154616",
+          filename: "set_placeholder",
+        });
+      } finally {
+        global.window = originalWindow;
+      }
     });
 
     it("extracts set links from anchors on site pages", () => {
@@ -62,13 +61,6 @@ describe("GirlsReleased Hoster Model", () => {
           querySelector: () => ({ textContent: "femjoy.com Sets" }),
         };
 
-        // Note: collectAllItems gets mockScope but NO root element was active on load,
-        // so to simulate site-page load we call without the second param (root=undefined)
-        // but here the test passes mockScope as the first param. Wait!
-        // The first param is root. If root is passed, isSitePage is false!
-        // To test isSitePage=true, we need root to be undefined.
-        // But scope is root ?? document. In test environment, global.document will be used if root is undefined.
-        // Let's mock global.document!
         const originalDocument = global.document;
         global.document = mockScope as unknown as Document;
 
@@ -78,7 +70,6 @@ describe("GirlsReleased Hoster Model", () => {
           expect(items[0]).toEqual({
             kind: "resolve-viewer",
             viewerUrl: "https://girlsreleased.com/set/154616",
-            extractor: "continuebutton",
             filename: "set_placeholder",
           });
         } finally {
@@ -90,10 +81,7 @@ describe("GirlsReleased Hoster Model", () => {
     });
   });
 
-  describe("resolveUrl (resolveGirlsreleasedUrl)", () => {
-    const resolveUrl = girlsreleasedModel.galleryConfig?.resolveUrl;
-    expect(resolveUrl).toBeDefined();
-
+  describe("resolveLeaf and leaf resolvers", () => {
     it("returns direct URL from imx.to POST request bypass", async () => {
       const originalFetch = global.fetch;
       global.fetch = mock(async () => {
@@ -110,8 +98,10 @@ describe("GirlsReleased Hoster Model", () => {
       }) as unknown as typeof fetch;
 
       try {
-        const directUrl = await resolveUrl!("continuebutton", "https://imx.to/i/6r3hhr");
-        expect(directUrl).toBe("https://image.imx.to/u/i/2026/04/27/6r3hhr.jpg");
+        const result = await resolveLeaf("https://imx.to/i/6r3hhr");
+        expect(result).toEqual({
+          url: "https://image.imx.to/u/i/2026/04/27/6r3hhr.jpg",
+        });
       } finally {
         global.fetch = originalFetch;
       }
@@ -136,8 +126,8 @@ describe("GirlsReleased Hoster Model", () => {
       }) as unknown as typeof fetch;
 
       try {
-        const directUrl = await resolveUrl!("continuebutton", "https://imx.to/i/6r3hhr");
-        expect(directUrl).toEqual({
+        const result = await resolveLeaf("https://imx.to/i/6r3hhr");
+        expect(result).toEqual({
           url: "https://image.imx.to/u/i/2026/04/27/6r3hhr.jpg",
           filename: "17944566_tyg186_002.jpg",
         });
@@ -146,9 +136,55 @@ describe("GirlsReleased Hoster Model", () => {
       }
     });
 
-    it("returns rawUrl if no viewerUrl is provided", async () => {
-      const directUrl = await resolveUrl!("someRawUrl");
-      expect(directUrl).toBe("someRawUrl");
+    it("resolves imagevenue by self-priming cookies", async () => {
+      const originalFetch = global.fetch;
+      const fetchCalls: { url: string; options?: any }[] = [];
+
+      global.fetch = mock(async (url: string | URL | Request, options?: any) => {
+        fetchCalls.push({ url: String(url), options });
+        return {
+          ok: true,
+          text: async () => `
+            <html>
+              <head>
+                <title>ImageVenue - photo.jpg</title>
+              </head>
+              <body>
+                <img class="img-fluid" src="https://cdn-imagevenue.com/12/34/photo.jpg" />
+              </body>
+            </html>
+          `,
+        } as any;
+      }) as unknown as typeof fetch;
+
+      try {
+        const result = await resolveLeaf("https://imagevenue.com/photo");
+        expect(result).toEqual({
+          url: "https://cdn-imagevenue.com/12/34/photo.jpg",
+          filename: "photo.jpg",
+        });
+        expect(fetchCalls).toHaveLength(2);
+        expect(fetchCalls[0]?.options?.cache).toBe("no-store");
+        expect(fetchCalls[1]?.options?.cache).toBe("reload");
+      } finally {
+        global.fetch = originalFetch;
+      }
+    });
+
+    it("throws error for unsupported hosts", async () => {
+      expect(resolveLeaf("https://example.com/image")).rejects.toThrow(
+        "no leaf resolver for host: example.com",
+      );
+    });
+
+    it("transforms imx.to thumbnail URL to full URL via thumbnailToFull", () => {
+      const full = thumbnailToFull("https://imx.to/u/t/2026/04/27/6r3hhr.jpg");
+      expect(full).toBe("https://imx.to/u/i/2026/04/27/6r3hhr.jpg");
+    });
+
+    it("returns null for non-imx thumbnail URLs or invalid URLs", () => {
+      expect(thumbnailToFull("https://imagevenue.com/u/t/image.jpg")).toBeNull();
+      expect(thumbnailToFull("invalid-url")).toBeNull();
     });
   });
 
