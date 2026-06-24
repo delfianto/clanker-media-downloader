@@ -29,6 +29,19 @@ Is this over-engineered? Yes. Does that bother the author? No. Were several seri
 
 ---
 
+## Tech Stack
+
+| Thing | Why |
+|-------|-----|
+| TypeScript 7 RC | Felt dangerous. Lived. |
+| Bun | npm is slow and boring. Also its built-in test runner is zero-config. |
+| vite-plus (`vp`) | Unified VoidZero toolchain — lint, fmt, typecheck, build |
+| vite-plugin-web-extension | Extension builds without wanting to die |
+| webextension-polyfill | `browser.*` everywhere, `chrome.*` nowhere |
+| `bun test` | 83 tests, 0 dependencies, 9 milliseconds. Eat that, Jest. |
+
+---
+
 ## Supported Sites
 
 We support [ImageBam](docs/HOSTER_IMAGEBAM.md), [ImgBox](docs/HOSTER_IMGBOX.md), [ImgBB](docs/HOSTER_IMGBB.md), [Bunkr](docs/HOSTER_BUNKR.md), [Erome](docs/HOSTER_EROME.md), [JPG6](docs/HOSTER_JPG6.md), and [GirlsReleased](docs/HOSTER_GIRLSRELEASED.md).
@@ -118,18 +131,7 @@ Do you want to know what actually happens when you press the download button? Do
 
 [Read the Architecture Docs here.](docs/ARCHITECTURE.md) You have been warned.
 
----
 
-## Tech Stack
-
-| Thing | Why |
-|-------|-----|
-| TypeScript 7 RC | Felt dangerous. Lived. |
-| Bun | npm is slow and boring. Also its built-in test runner is zero-config. |
-| vite-plus (`vp`) | Unified VoidZero toolchain — lint, fmt, typecheck, build |
-| vite-plugin-web-extension | Extension builds without wanting to die |
-| webextension-polyfill | `browser.*` everywhere, `chrome.*` nowhere |
-| `bun test` | 83 tests, 0 dependencies, 9 milliseconds. Eat that, Jest. |
 
 ---
 
