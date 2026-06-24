@@ -75,8 +75,15 @@ All of this happens so you can press a button and get a JPEG. Just let that sink
 
 Because we are forced to use the `browser.downloads` API, we are entirely at the mercy of Chrome's native download manager, which is apparently held together by duct tape and prayers. Here are the specific absurdities we actively mitigate:
 
-### The `mkdir` Race Condition (Or: Why Your Browser Becomes Slower Than a Sloth)
-If you fire off 5 concurrent downloads into a brand new, non-existent subfolder (e.g. `Clanker/MyNewGallery`), Chromium on Linux encounters a catastrophic VFS (Virtual File System) bug. 
+### The Download Bubble Freeze (Or: Why Your Browser Becomes Slower Than a Sloth)
+If we didn't hijack the native download buttons on these sites, clicking a "download all" button on a native gallery page would instantly trigger 150 separate `<a download>` clicks simultaneously. 
+
+Chrome handles this by trying to spawn a new "Download UI" bubble/tray instance for every single file. The browser's main UI thread completely locks up attempting to render 150 download animations at once, and your browser becomes slower than a sloth and completely unresponsive.
+
+**The Hack:** The extension aggressively hijacks the native download buttons via `event.preventDefault()`. We route everything through our Service Worker queue and strictly enforce a concurrency limit (default 5 for images). This trickles the downloads to Chrome's native manager at a survivable pace, preventing the UI thread from having a heart attack.
+
+### The `mkdir` Race Condition (Or: Why Your Files End Up in the Root Folder)
+Even with controlled concurrency, if you fire off 5 concurrent downloads into a brand new, non-existent subfolder (e.g. `Clanker/MyNewGallery`), Chromium on Linux encounters a catastrophic VFS (Virtual File System) bug. 
 
 Multiple threads attempt to `mkdir` the directory simultaneously. They collide. The disk I/O blocks heavily, your entire browser stutters like it's rendering a 4k video on a toaster, and the download manager completely loses its mind. 
 
