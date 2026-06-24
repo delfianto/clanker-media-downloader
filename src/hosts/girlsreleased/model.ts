@@ -50,7 +50,7 @@ function grAuthHeaders(): Record<string, string> {
 async function fetchSetsPage(url: string, maxRetries = 3): Promise<{ sets?: unknown[] } | null> {
   for (let attempt = 0; ; attempt++) {
     try {
-      const res = await fetch(url, { headers: grAuthHeaders() });
+      const res = await fetch(url, { headers: grAuthHeaders(), credentials: "include" });
       if (res.ok) return (await res.json()) as { sets?: unknown[] };
       const retryable = res.status === 429 || res.status >= 500;
       if (!retryable || attempt >= maxRetries) {
@@ -148,7 +148,18 @@ async function collectGirlsreleasedItems(root?: Document | Element): Promise<Gal
       // extraction failed (e.g., token name changed in local storage).
       // Fallback to scraping the DOM so the user at least gets page 1's sets.
       console.warn(`[md] API returned 0 sets for ${site}, falling back to DOM scraping`);
-      return collectSetAnchorsFromRoot(document);
+
+      // SPA race condition: React might still be showing the OLD site's sets.
+      // Poll the DOM until we see the new site's name on the page somewhere.
+      const siteLower = site.toLowerCase();
+      for (let i = 0; i < 20; i++) {
+        if (document.body.textContent?.toLowerCase().includes(siteLower)) {
+          const anchors = collectSetAnchorsFromRoot(document);
+          if (anchors.length > 0) return anchors;
+        }
+        await new Promise((r) => setTimeout(r, 250));
+      }
+      return [];
     }
   }
 
