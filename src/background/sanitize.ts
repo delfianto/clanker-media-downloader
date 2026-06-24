@@ -13,6 +13,21 @@ export function sanitizeFilename(name: string): string {
   clean = clean.replace(/_+/g, "_");
   // Windows forbids leading/trailing spaces, dots, hyphens, and underscores
   clean = clean.replace(/^[\s._-]+|[\s._-]+$/g, "");
+
+  // Truncate to prevent MAX_PATH overflow which causes Chrome to drop the
+  // subfolder and dump the file into ~/Downloads. Keep it to 100 chars.
+  if (clean.length > 100) {
+    const extIdx = clean.lastIndexOf(".");
+    if (extIdx !== -1 && clean.length - extIdx <= 10) {
+      // Preserve extension (up to 10 chars)
+      clean = clean.slice(0, 100 - (clean.length - extIdx)) + clean.slice(extIdx);
+    } else {
+      clean = clean.slice(0, 100);
+    }
+    // Re-trim trailing dots/spaces that might have been exposed by truncation
+    clean = clean.replace(/[\s._-]+$/g, "");
+  }
+
   // Don't let sanitization produce an empty name
   return clean || "file";
 }
