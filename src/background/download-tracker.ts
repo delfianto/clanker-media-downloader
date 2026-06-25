@@ -32,23 +32,40 @@ export function unregisterFilename(url: string, desiredFilename: string): void {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 (globalThis as any).chrome.downloads.onDeterminingFilename.addListener(
   (item: any, suggest: any) => {
-    // 1. Try by download ID first (if trackDownload won the race)
-    const pending = pendingDownloads.get(item.id);
-    if (pending && pending.desiredFilename) {
-      suggest({ filename: pending.desiredFilename, conflictAction: "uniquify" });
+    // DO NOT interfere with downloads initiated by other extensions (e.g. Video DownloadHelper)
+    // If we call suggest() on their downloads, we overwrite their filename choices!
+    if (item.byExtensionId && item.byExtensionId !== browser.runtime.id) {
       return;
     }
 
-    // 2. Try by URL (if onDeterminingFilename won the race)
-    const urlList = pendingFilenames.get(item.url);
-    if (urlList && urlList.length > 0) {
-      const desiredFilename = urlList.shift()!;
-      if (urlList.length === 0) pendingFilenames.delete(item.url);
-      suggest({ filename: desiredFilename, conflictAction: "uniquify" });
-      return;
-    }
+    let attempts = 0;
+    const poll = () => {
+      // 1. Try by download ID first (most robust, requires trackDownload to have run)
+      const pending = pendingDownloads.get(item.id);
+      if (pending && pending.desiredFilename) {
+        suggest({ filename: pending.desiredFilename, conflictAction: "uniquify" });
+        return;
+      }
 
-    suggest();
+      // 2. Try by URL (if trackDownload still hasn't run after polling)
+      const urlList = pendingFilenames.get(item.url);
+      if (urlList && urlList.length > 0) {
+        const desiredFilename = urlList.shift()!;
+        if (urlList.length === 0) pendingFilenames.delete(item.url);
+        suggest({ filename: desiredFilename, conflictAction: "uniquify" });
+        return;
+      }
+
+      if (attempts < 50) {
+        attempts++;
+        setTimeout(poll, 10);
+      } else {
+        suggest();
+      }
+    };
+
+    poll();
+    return true; // Return true to indicate suggest() will be called asynchronously. This also ensures we execute AFTER synchronous extensions.
   },
 );
 

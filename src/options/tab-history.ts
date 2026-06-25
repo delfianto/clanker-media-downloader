@@ -236,6 +236,8 @@ export function renderJobCard(
         } catch {
           // ignore — card stays expanded with empty items
         }
+      } else if (itemsContainer.childElementCount === 0 && job.items && job.items.length > 0) {
+        renderItemsInto(itemsContainer, job);
       }
     }
   });
