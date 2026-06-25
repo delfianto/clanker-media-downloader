@@ -11,7 +11,7 @@ import {
   type LogRecord,
 } from "./idb";
 
-const MAX_LOGS = 500;
+const MAX_LOGS = 5000;
 const FLUSH_INTERVAL_MS = 5000;
 const LEGACY_LOGS_KEY = "downloadLogs";
 

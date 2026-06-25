@@ -87,6 +87,37 @@
           <div id="dl-view-logs" hidden>
             <div class="logs-toolbar">
               <span id="log-count" class="log-count"></span>
+              <div class="logs-filters" style="display: flex; gap: 10px; margin: 0 15px; flex: 1">
+                <select
+                  id="log-level-filter"
+                  style="
+                    padding: 4px 8px;
+                    border-radius: 4px;
+                    border: 1px solid #444;
+                    background: #2a2a2a;
+                    color: #fff;
+                  "
+                >
+                  <option value="all">All Levels</option>
+                  <option value="error">Error</option>
+                  <option value="warn">Warning</option>
+                  <option value="info">Info</option>
+                  <option value="debug">Debug</option>
+                </select>
+                <input
+                  type="text"
+                  id="log-search-input"
+                  placeholder="Search logs..."
+                  style="
+                    padding: 4px 8px;
+                    border-radius: 4px;
+                    border: 1px solid #444;
+                    background: #2a2a2a;
+                    color: #fff;
+                    flex: 1;
+                  "
+                />
+              </div>
               <div class="logs-actions">
                 <button id="btn-copy-logs" class="reset-btn">Copy</button>
                 <button id="btn-clear-logs" class="reset-btn">Clear</button>

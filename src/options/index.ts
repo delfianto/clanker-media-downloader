@@ -137,6 +137,9 @@ async function init(): Promise<void> {
   $("stab-history").addEventListener("click", () => switchDlSubTab("history"));
   $("stab-logs").addEventListener("click", () => switchDlSubTab("logs"));
 
+  $("log-level-filter").addEventListener("change", () => void loadLogsTab());
+  $("log-search-input").addEventListener("input", () => void loadLogsTab());
+
   $("btn-copy-logs").addEventListener("click", () => {
     void (async () => {
       try {

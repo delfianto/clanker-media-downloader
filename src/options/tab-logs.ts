@@ -36,12 +36,24 @@ export async function loadLogsTab(): Promise<void> {
   try {
     const res = (await browser.runtime.sendMessage({ type: "MD_GET_LOGS" })) as MDGetLogsResponse;
     const logs = res.logs ?? [];
-    $("log-count").textContent = `${logs.length} entries`;
+
+    const levelFilter = ($("log-level-filter") as HTMLSelectElement).value;
+    const searchStr = ($("log-search-input") as HTMLInputElement).value.toLowerCase();
+
+    const filteredLogs = logs.filter((entry) => {
+      if (levelFilter !== "all" && entry.level !== levelFilter) return false;
+      if (searchStr && !entry.msg.toLowerCase().includes(searchStr)) return false;
+      return true;
+    });
+
+    $("log-count").textContent = `${filteredLogs.length} of ${logs.length} entries`;
     container.replaceChildren();
-    if (logs.length === 0) {
-      container.append(el("p", { className: "default-note", textContent: "No logs yet." }));
+    if (filteredLogs.length === 0) {
+      container.append(
+        el("p", { className: "default-note", textContent: "No logs match filters." }),
+      );
     } else {
-      for (const entry of logs) {
+      for (const entry of filteredLogs) {
         container.append(renderLogEntry(entry));
       }
     }
