@@ -98,9 +98,18 @@ Chrome's response? It forcefully terminates the worker in the middle of your dow
 
 **The Hack:** We use a `Port` keep-alive ping system that prevents the worker from sleeping while the queue is active. Furthermore, we absolutely never `return` directly from the `onMessage` handler to avoid port leakage. We handle the async work separately and use `sendResponse` explicitly. 
 
-### "Random" Files in `~/Downloads`
+### "Random" Files in `~/Downloads` (HTML Cloudflare blocks)
 Sometimes a CDN rate-limits you and returns an HTTP 200 OK... but the payload is a Cloudflare block HTML page. 
 
 Chrome's download manager sniffs the HTML body, aggressively renames the file from `.jpg` to `.html`, maliciously strips our custom subfolder path (again), and dumps it into the root `~/Downloads` directory. And then sometimes marks the download as a `SERVER_FAILED` error anyway, just to mock you.
 
 **The Hack:** The Service Worker performs an explicit `HEAD` (or `GET`) request before passing the URL to the download manager. If the `Content-Type` is `text/html`, we throw an error and abort the download *before* Chrome can touch it, preventing HTML litter in your downloads folder.
+
+### The `onDeterminingFilename` Race Condition (Or: Why CDN filenames litter your Downloads)
+Chrome's `downloads.download({ url, filename })` API actively ignores your custom `filename` if the CDN server responds with a `Content-Disposition: attachment; filename="garbage_name.jpg"` header. The only way to override the CDN's filename is to use the `chrome.downloads.onDeterminingFilename` event listener and call `suggest({ filename })`.
+
+In MV3, `downloads.download()` is an async IPC call that eventually resolves with a `downloadId`. You would normally map that `downloadId` to your desired filename, and when `onDeterminingFilename(item)` fires, look up `item.id` and suggest the filename.
+
+**The Bug:** If the CDN responds *too quickly* (e.g., edge cached or tiny image), the network header arrives and `onDeterminingFilename` fires **before** the `downloads.download()` promise even resolves. Because your mapping hasn't been saved yet, the listener throws up its hands, Chrome uses the CDN's garbage filename, strips your subfolder, and drops the file directly into `~/Downloads`.
+
+**The Hack:** We bypass the race condition entirely by pre-registering a `pendingFilenames` map keyed by the **URL**, not the `downloadId`. We register the URL *before* we even call `downloads.download()`. When `onDeterminingFilename` fires, we check the URL, pop the pre-registered filename, and successfully enforce our custom path regardless of how fast Chrome's network stack is.
