@@ -76,6 +76,33 @@ browser.downloads.onChanged.addListener((delta) => {
 
   if (delta.state.current === "complete") {
     pendingDownloads.delete(delta.id);
+
+    if (pending.desiredFilename) {
+      browser.downloads
+        .search({ id: delta.id })
+        .then((results) => {
+          const dl = results[0];
+          if (dl && dl.filename) {
+            const actualPath = dl.filename.replace(/\\/g, "/");
+            const expectedSuffix = pending.desiredFilename!.replace(/\\/g, "/");
+            if (!actualPath.endsWith(expectedSuffix)) {
+              // Stray file detected! The browser saved it somewhere else (usually ~/Downloads).
+              // Dynamic import to avoid circular dependencies if any exist.
+              import("./logger")
+                .then(({ appendLog }) => {
+                  void appendLog(
+                    "error",
+                    `STRAY FILE DETECTED! Expected: .../${expectedSuffix} | Actual: ${actualPath} | Source URL: ${dl.url}`,
+                    pending.jobId,
+                  );
+                })
+                .catch(() => {});
+            }
+          }
+        })
+        .catch(() => {});
+    }
+
     pending.resolve();
   } else if (delta.state.current === "interrupted") {
     pendingDownloads.delete(delta.id);
