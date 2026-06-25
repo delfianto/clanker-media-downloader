@@ -101,14 +101,20 @@ browser.downloads.onChanged.addListener((delta) => {
         .catch(() => {});
     }
 
+    if (pending.jobId) {
+      browser.downloads.erase({ id: delta.id }).catch(() => {});
+    }
+
     pending.resolve();
   } else if (delta.state.current === "interrupted") {
     pendingDownloads.delete(delta.id);
+    browser.downloads.erase({ id: delta.id }).catch(() => {});
     pending.reject(
       new Error(`download interrupted${delta.error ? `: ${delta.error.current}` : ""}`),
     );
   } else if (delta.state.current === "canceled") {
     pendingDownloads.delete(delta.id);
+    browser.downloads.erase({ id: delta.id }).catch(() => {});
     pending.reject(new Error("download canceled"));
   }
 });
