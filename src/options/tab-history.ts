@@ -220,9 +220,10 @@ export function renderJobCard(
     } else {
       card.classList.add("expanded");
       expandedJobIds.add(job.jobId);
-      // Items are NOT loaded by listJobs (metadata only). Fetch them on
-      // expand via MD_GET_JOB so the IDB query runs once per click, not
-      // once per 3s poll for all 139 jobs.
+      // Use a dynamic query so we don't render into an orphaned node if
+      // loadHistoryTab transplanted a different .job-items container into this card.
+      const currentItemsContainer = card.querySelector(".job-items") as HTMLElement;
+
       if (job.items && job.items.length === 0) {
         try {
           const res = (await browser.runtime.sendMessage({
@@ -231,13 +232,17 @@ export function renderJobCard(
           })) as MDGetJobResponse;
           if (res.job?.items && res.job.items.length > 0) {
             job.items = res.job.items;
-            renderItemsInto(itemsContainer, job);
+            renderItemsInto(currentItemsContainer, job);
           }
         } catch {
           // ignore — card stays expanded with empty items
         }
-      } else if (itemsContainer.childElementCount === 0 && job.items && job.items.length > 0) {
-        renderItemsInto(itemsContainer, job);
+      } else if (
+        currentItemsContainer.childElementCount === 0 &&
+        job.items &&
+        job.items.length > 0
+      ) {
+        renderItemsInto(currentItemsContainer, job);
       }
     }
   });
